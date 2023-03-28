@@ -1,0 +1,55 @@
+Apollo:
+  X1:
+    username: apollo
+    password: xxx
+    portal_url: http://xxx/
+    login_url: http://xxx/signin
+  X2:
+    username: apollo
+    password: xxx
+    portal_url: https://xxx/
+    login_url: https://xxx/signin
+
+Archery:
+  schema:
+    archery:
+      group_id: 1
+      instance_id: 1
+      db_name: archery
+  auth:
+    username: yakir
+    password: yakir
+    token_url: http://xxx.com/api/auth/token/
+    refresh_url: http://xxx.com/api/auth/token/refresh/
+    verify_url: http://xxx.com/api/auth/token/verify/
+  v1:
+    sql_ticket_url: http://xxx.com/api/v1/workflow/
+
+Tool:
+  SVN:
+    username: yakir
+    password: yakir
+  Redis:
+    host: localhost
+    port: 6379
+    db: 10
+    decode_responses: True
+  Email:
+    smtp_server: xxx
+    smtp_port: 25
+    sender: xxx
+    password: xxx
+    from: xxx
+    to: xxx
+    receivers: ['xxx']
+
+JIRA:
+  host: https://xxx.com
+  user: yakir
+  password: yakir
+
+CMDB:
+  search_url: https://xxx.com
+  upgrade_url: https://xxx.com
+  domain: xxx.com
+  token: xxx
