@@ -7,8 +7,8 @@ from drf_yasg.utils import swagger_auto_schema
 from time import sleep
 from typing import Any
 
-from cicdflow.models import JiraWorkflow
-from cicdflow.serializers import JiraWorkflowSerializer, CICDFlowSerializer
+from cicdflow.models import JiraWorkflow, SqlWorkflow
+from cicdflow.serializers import JiraWorkflowSerializer, CICDFlowSerializer, SqlWorkflowSerializer
 from util.cicdflow_util import JiraEventWebhookAPI, JiraAPI
 import logging
 # c_logger = logging.getLogger('console_logger')
@@ -229,16 +229,18 @@ class JiraFlowView(APIView):
 
             # webhook 事件为 updated 时，判断当前 issue 状态，根据状态进行转换
             elif jira_event_webhook_obj.webhook_event == 'jira:issue_updated':
-                # 获取当前 webhook 中数据
+                # 获取当前 Jira webhook 中数据
                 current_webhook_data = jira_event_webhook_obj.webhook_data
                 current_issue_key = current_webhook_data.get('issue_key')
                 current_status = current_webhook_data.get('status')
                 current_summary = current_webhook_data.get('summary')
-                # 获取 DB 中上一次数据
+                # 获取 JiraWorkflow 表中上一次数据
                 last_issue_obj = JiraWorkflow.objects.get(issue_key=current_issue_key)
-                # 根据 DB 对象序列化当前 webhook 数据
+                # 根据 JiraWorkflow 序列化器序列化当前 webhook 数据
                 jiraworkflow_ser = JiraWorkflowSerializer(instance=last_issue_obj, data=current_webhook_data)
                 jiraworkflow_ser.is_valid(raise_exception=True)
+                # 根据升级工单名获取 SqlWorkflow 表数据
+                # sql_workflow_obj = SqlWorkflow.objects.filter(workflow_name=current_summary)
 
                 # 判断当前 webhook 状态，根据状态获取数据进行变更。每次转换状态前更新当前 issue DB 数据
                 jiraworkflow_ser_data = dict(jiraworkflow_ser.validated_data)
@@ -247,11 +249,15 @@ class JiraFlowView(APIView):
                     case 'SQL待执行':
                         webhook_result = jira_event_webhook_obj.updated_event_sql_waiting(
                             last_issue_obj=last_issue_obj,
-                            current_issue_data=jiraworkflow_ser_data
+                            current_issue_data=jiraworkflow_ser_data,
+                            sqlworkflow_ser=SqlWorkflowSerializer
                         )
                     # SQL执行中 状态，可转变状态：SQL升级成功 ｜ SQL升级失败
                     case 'SQL执行中':
-                        webhook_result = jira_event_webhook_obj.updated_event_sql_inprogress()
+                        webhook_result = jira_event_webhook_obj.updated_event_sql_inprogress(
+                            sql_workflow_obj=SqlWorkflow,
+                            current_issue_data=jiraworkflow_ser_data
+                        )
                     # CONFIG执行中 状态，可转变状态：无配置升级/已升级 ｜ 配置升级成功 ｜ 配置升级失败
                     case 'CONFIG执行中':
                         webhook_result = jira_event_webhook_obj.updated_event_config_inprogress(

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CICDFlow, CICDState, JiraWorkflow
+from .models import CICDFlow, CICDState, JiraWorkflow, SqlWorkflow
 
 """models 类序列化器"""
 class CICDFlowSerializer(serializers.Serializer):
@@ -28,3 +28,9 @@ class JiraWorkflowSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'project': {'allow_blank': True}
         }
+
+class SqlWorkflowSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SqlWorkflow
+        fields = '__all__'
+        # read_only_fields = ['workflow_name']

@@ -1,7 +1,7 @@
 import requests
-import json
-from pprint import pprint
+from typing import Dict, Union, Literal
 from datetime import datetime,timedelta
+from ast import literal_eval
 try:
     from getconfig import GetYamlConfig
 except:
@@ -12,25 +12,22 @@ archery_config = GetYamlConfig().get_config('Archery')['auth']
 
 __all__ = ['ArcheryAPI']
 
-class ArcheryAPI():
+class ArcheryAPI(object):
     def __init__(self,archery_conf=archery_config):
-        if archery_conf != None:
-            self.url = archery_conf.get('url','https://uat-archery.ccacuat.com/api')
-            self.sql_run_max_time = 3 #单位day
-            username = archery_conf.get('username','admin')
-            password = archery_conf.get('password','admin')
-            self.headers = {
-                'content-type' : 'application/json',
-            }
-            self.login_headers = {
-                'content-type' : 'application/x-www-form-urlencoded; charset=UTF-8',
-            }
-        else:
-            print('archery_conf is None!')
+        self.url = archery_conf.get('url','https://uat-archery-api.ccacuat.com/api')
+        self.sql_run_max_time = 3 #单位day
+        self.__username = archery_conf.get('username')
+        self.__password = archery_conf.get('password')
+        self.headers = {
+            'content-type' : 'application/json',
+        }
+        self.login_headers = {
+            'content-type' : 'application/x-www-form-urlencoded; charset=UTF-8',
+        }
         try:
             data = {
-                'username': username,
-                'password': password,
+                'username': self.__username,
+                'password': self.__password,
             }
             token_url = self.url + '/auth/token/'
             token_res_data = requests.post(url=token_url, data=data, headers=self.login_headers).json()
@@ -44,10 +41,10 @@ class ArcheryAPI():
 
     def get_workflows(self,args=dict):
         data = {
-            'id': args.get('id',''),
-            'workflow__status':args.get('status',''),
+            'id': args.get('id'),
+            'workflow__status':args.get('status'),
             'size':100,
-            'workflow__workflow_name__icontains': args.get('workflow_name',None),
+            'workflow__workflow_name__icontains': args.get('workflow_name'),
         }
         try:
             url = self.url + '/v1/workflow/'
@@ -62,11 +59,14 @@ class ArcheryAPI():
                      result = res_data
                 else:
                     for index in range(res_data['count']):
-                        name =  res_data['results'][index]['workflow']['workflow_name']
-                        id =res_data['results'][index]['workflow']['id']
+                        name = res_data['results'][index]['workflow']['workflow_name']
+                        wid = res_data['results'][index]['workflow']['id']
                         status = res_data['results'][index]['workflow']['status']
-                        workflow_id = res_data['results'][index]['workflow_id']
-                        result.append({'name': name,'id': id,'status': status})
+                        try:
+                            execute_result = literal_eval(res_data['results'][index]['execute_result'])
+                        except SyntaxError:
+                            execute_result = ""
+                        result.append({'name': name, 'id': wid, 'status': status, 'execute_result': execute_result})
                         status = True
             else:
                 msg = '查询失败'
@@ -74,6 +74,32 @@ class ArcheryAPI():
             return {'status':status,'msg':msg,'data':result}
         except Exception as e:
             return {'status':False,'msg':'查询异常','data':e}
+
+    def get_full_workflows(
+            self,
+            workflow_name_icontains: str,
+            # workflow_status: str = None,
+            # workflow_id: int = 0,
+            page: int = 1,
+            size: int = 30,
+    ):
+        data = {
+            'workflow__workflow_name__icontains': workflow_name_icontains,
+            # 'workflow__status': workflow_status,
+            # 'workflow_id': workflow_id,
+            'page': page,
+            'size': size,
+        }
+        try:
+            url = self.url + '/v1/workflow/'
+            res = requests.get(url=url,params=data,headers=self.headers)
+
+        except Exception as err:
+            return {
+                'status': False,
+                'msg': '工单查询异常',
+                'data': err.__str__()
+            }
 
     def workflow_times(self):
         now = datetime.now()
@@ -126,7 +152,7 @@ class ArcheryAPI():
         except Exception as e:
             return {'status': False, 'msg': '查询实例信信息异常', 'data': e}
 
-    def commit_workflow(self,args=dict):
+    def commit_workflow(self,args: Dict=dict):
         if not args['sql']:
             return {'status':False,'msg':'args[sql] is None','data':''}
         try:
@@ -137,11 +163,7 @@ class ArcheryAPI():
                 return {'status':False,'msg':groups_info['msg'],'data':groups_info['data']}
             else:
                 group_id = groups_info['data'][args['resource_tag']]
-            # # 重名 workflow_name 工单不允许提交
-            # workflow_info = self.get_workflows({'workflow_name':args['workflow_name']})
-            # if workflow_info['status']:
-            #     return {'status':False,'msg':f'workflow_name:{args["workflow_name"]}已经存在','data':workflow_info}
-            #查询instance_id / db_name
+            #查询 instance_id / db_name
             instance_info = self.get_instances(instance_name=args['instance_tag'])
             if instance_info['status']:
                 db_name = instance_info['data'][args['instance_tag']]['db_name']
@@ -149,9 +171,9 @@ class ArcheryAPI():
             else:
                 return {'status':False,'msg':instance_info['msg'],'data':instance_info['data']}
 
-            # 获取 sql_index 与 sql_release_info 数据，如果为空抛出异常
+            # 获取 sql_index 与 sql_release_info 数据
             sql_index = args.get('sql_index', 0)
-            sql_release_info = args.get('sql_release_info', '手动提交工单')
+            sql_release_info = args.get('sql_release_info', 0)
             # if not sql_index or not sql_release_info:
             #     return {'status': False, 'msg': 'sql_index 或 sql_release_info 值不能为空或 None，请重试', 'data': ''}
 
@@ -160,13 +182,13 @@ class ArcheryAPI():
                 'workflow':{
                     'sql_index': sql_index,                             # 工单SQL执行序号
                     'sql_release_info': sql_release_info,               # 工单SQL版本信息
-                    'workflow_name': args.get('workflow_name','工单名'), #工单名 *
-                    'demand_url': args.get('demand_url','描述链接'),     #问题描述
-                    'group_id': group_id,                               #资源组id *
-                    'instance': instance_id,                            #实例ID *
-                    'db_name': db_name,                                 #数据库名 *
-                    'is_backup': args.get('is_backup',True),            #是否备份
-                    'engineer': args.get('engineer','admin'),           #发起人
+                    'workflow_name': args.get('workflow_name','工单名'), # 工单名
+                    'demand_url': args.get('demand_url','描述链接'),     # 问题描述
+                    'group_id': group_id,                               # 资源组id
+                    'instance': instance_id,                            # 实例ID
+                    'db_name': db_name,                                 # 数据库名
+                    'is_backup': args.get('is_backup',True),            # 是否备份
+                    'engineer': args.get('engineer','admin'),           # 发起人
                 },
             }
             data['workflow'] = dict(data['workflow'],**dates)
@@ -184,21 +206,98 @@ class ArcheryAPI():
                 # workflow_queuing              工作流排队
                 # workflow_review_pass          工作流程review_pass
                 # workflow_timingtask           工作流计时任务
-                # 'workflow_manreviewing'       提交成功等待审核
+                # workflow_manreviewing         提交成功等待审核
                 if res_data['workflow']['status'] == 'workflow_manreviewing':
                     result_data = {
-                        'name':res_data['workflow']['workflow_name'],
-                        'id':res_data['workflow']['id'],
-                        'status':res_data['workflow']['status'],
+                        'w_id': int(res_data['workflow']['id']),
+                        'workflow_name': res_data['workflow']['workflow_name'],
+                        'w_status': res_data['workflow']['status'],
+                        'sql_index': int(res_data['workflow']['sql_index']),
+                        'sql_release_info': int(res_data['workflow']['sql_release_info'])
                     }
-                    result = {'status':True,'msg':'提交工单成功,等待审核','data':result_data}
+                    result = {'status': True, 'msg': '提交工单成功,等待审核', 'data': result_data}
                 else:
-                    result = {'status':False,'msg':'提交工单成功，状态异常,请登陆archery后台查看','data':''}
+                    result = {'status': False, 'msg': '提交工单成功，状态异常,请登陆archery后台查看', 'data':''}
                 return result
             else:
                 return {'status':False,'msg':'提交工单失败','data':res.json()}
         except Exception as e:
             return {'status':False,'msg':'提交工单异常','data':e}
+
+    def audit_workflow(
+            self,
+            engineer: str = 'cdflow',
+            workflow_id: int = None,
+            audit_remark: str = 'API 自动审核通过',
+            # 工单类型：1-查询权限申请，2-SQL上线申请，3-数据归档申请
+            workflow_type: Literal[1, 2, 3] = 2,
+            # 审核类型：pass-通过，cancel-取消
+            audit_type: Literal['pass', 'cancel'] = 'pass') -> Dict:
+        """
+        调用 Archery 接口将后台工单审核通过，进入待执行状态
+        """
+        return_data : Dict[str, Union[str, Dict, bool]] = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
+        if workflow_id is None:
+            return_data['msg'] = '自动审核通过失败，工作流 ID 不能为空或 None'
+            return return_data
+
+        try:
+            audit_data = {
+                'engineer': engineer,
+                'workflow_id': workflow_id,
+                'audit_remark': audit_remark,
+                'workflow_type': workflow_type,
+                'audit_type': audit_type
+            }
+            url = self.url + '/v1/workflow/audit/'
+            res = requests.post(url=url, json=audit_data, headers=self.headers)
+            if res.status_code == 200:
+                return_data['status'] = True
+                return_data['msg'] = f"API 自动审核工单通过。"
+            else:
+                return_data['msg'] = f"API 自动审核工单失败，返回状态非200，请检查原因。"
+            return_data['data'] = res.text
+        except Exception as err:
+            return_data['msg'] = f"API 自动审核工单异常，异常原因: {err.__str__()}"
+        return return_data
+
+    def execute_workflow(
+            self,
+            engineer: str = 'cdflow',
+            workflow_id: int = None,
+            # 工单类型：1-查询权限申请，2-SQL上线申请，3-数据归档申请
+            workflow_type: Literal[1, 2, 3] = 2,
+            # 执行模式：auto-线上执行，manual-已手动执行
+            mode: Literal['auto', 'manual'] = 'auto') -> Dict:
+        """
+        调用 Archery 接口将后台工单自动线上执行（操作风险高，谨慎调用）
+        """
+        return_data : Dict[str, Union[str, Dict, bool]] = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
+        try:
+            execute_data = {
+                'engineer': engineer,
+                'workflow_id': workflow_id,
+                'workflow_type': workflow_type,
+                'mode': mode
+            }
+            url = self.url + '/v1/workflow/execute/'
+            res = requests.post(url=url, json=execute_data, headers=self.headers)
+            if res.status_code == 200:
+                return_data['status'] = True
+                return_data['msg'] = f"工单自动执行成功。"
+            else:
+                return_data['msg'] = f"工单自动执行失败，返回状态非200，请检查原因。"
+        except Exception as err:
+            return_data['msg'] = f"工单自动执行异常，异常原因: {err.__str__()}"
+        return return_data
 
 if __name__ == '__main__':
     pass

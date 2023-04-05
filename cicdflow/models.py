@@ -76,3 +76,22 @@ class JiraWorkflow(models.Model):
 
     def __str__(self):
         return "Workflow Info: %s  %s" % (self.issue_key, self.summary)
+
+
+class SqlWorkflow(models.Model):
+    w_id = models.IntegerField(verbose_name='工单ID', primary_key=True)
+    sql_index = models.IntegerField(verbose_name='升级序号', default=0)
+    sql_release_info = models.IntegerField(verbose_name='SQL版本信息', default=0)
+    workflow_name = models.ForeignKey('JiraWorkflow', verbose_name='工单名称',
+                                      on_delete=models.CASCADE, to_field='summary', related_name='sql_workflow_name')
+    w_status = models.CharField(verbose_name='工单状态', max_length=64)
+
+    create_date = models.DateTimeField(default=timezone.now)
+    update_date = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'sql_workflow'
+        ordering = ['workflow_name', 'sql_index']
+
+    def __str__(self):
+        return str(self.sql_release_info)
