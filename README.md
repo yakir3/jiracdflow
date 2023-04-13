@@ -1,11 +1,11 @@
-## APP START
+## APP START 
 ```shell
 # static dir
 mkdir ./static
 python manage.py collectstatic --noinput
 
 # logs dir
-mkdir logs
+mkdir logs 
 
 # migrate db
 python manage.py makemigrations
