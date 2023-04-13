@@ -1,9 +1,6 @@
 import requests
 from typing import Union, Dict
-try:
-    from getconfig import GetYamlConfig
-except:
-    from util.getconfig import GetYamlConfig
+from util.getconfig import GetYamlConfig
 
 # 获取日志器与配置信息
 # apollo_logger = GetLogger().get_logger('basiclogger')
@@ -19,7 +16,7 @@ class ApolloClient(object):
         headers: 请求头, options 参数
     """
     return_data = {'code': 'failed', 'msg': ''}
-    def __init__(self, login_product: str('J9|A18')='A18', headers=None):
+    def __init__(self, login_product: str='A18', headers=None):
         self.product_info = apollo_config[login_product]
         self.login_page = self.product_info["login_url"]
         self.login_data = {
@@ -35,7 +32,7 @@ class ApolloClient(object):
     def get_values(
             self,
             app_id: str,
-            env: str('DEV|FAT|UAT|PRO'),
+            env: str, # DEV, FAT, UAT, PRO
             method='GET'
     ) -> Union[None, Dict]:
         """ 获取所有配置值
@@ -105,10 +102,10 @@ class ApolloClient(object):
 
     def add_authorized(
             self,
+            env: str,
             app_id: str=None,
-            env: str('DEV|FAT|UAT|PRO')=None,
             user: str=None,
-            permission: str('ModifyNamespace|ReleaseNamespace')=None,
+            permission: str=None, # ModifyNamespace, ReleaseNamespace
             namespace: str='application',
             headers={"Content-Type": "text/plain"}
     ) -> None:

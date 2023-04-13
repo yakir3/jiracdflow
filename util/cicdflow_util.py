@@ -1,15 +1,16 @@
-from typing import Dict, List, Union, Any
+from typing import Dict, List, Union, Any, Tuple
 from datetime import datetime
 from time import sleep
 import re
-from collections import defaultdict
-from django.db.models import Q
+from collections import defaultdict, UserDict
+# from django.db.models import Q
 
 from util.jira_api import JiraWebhookData, JiraAPI
 from util.cmdb_api import CmdbAPI
 from util.archery_api import ArcheryAPI
 from util.svn_client import SvnClient
 from util.email_tool import EmailClient
+from util.pgsql_api import PostgresClient
 
 __all__ = ['JiraEventWebhookAPI', 'JiraAPI']
 
@@ -33,8 +34,8 @@ def compare_list_info(last_list_info: List, current_list_info: List) -> List[Dic
     return compare_result
 
 # 代码升级完成发送邮件通知
-def completed_workflow_notice(start_time: str, end_time: str, email_summary: str, project_list: List) -> Dict:
-    project: str = '\n'.join(project_list) if None not in project_list else '无代码升级，SQL 或配置已升级到 UAT 环境'
+def completed_workflow_notice(start_time: str, end_time: str, email_summary: str, upgrade_info_list: List) -> Dict:
+    upgrade_info: str = '\n'.join(upgrade_info_list) if None not in upgrade_info_list else '无代码升级，SQL 或配置已升级到 UAT 环境'
     send_msg: str = f"""Dear All:
 
 1. Upgrade start time:  {start_time}
@@ -42,7 +43,7 @@ def completed_workflow_notice(start_time: str, end_time: str, email_summary: str
 3. Upgrader: API
 4. The following content has been upgraded:
 
-{project}
+{upgrade_info}
 """
     send_result = email_obj.send_email(send_msg, email_summary)
     return send_result
@@ -51,7 +52,8 @@ def completed_workflow_notice(start_time: str, end_time: str, email_summary: str
 def get_sql_commit_data(
         sql_data: Dict[str, Union[str, int]],
         current_sql_info: List,
-        current_summary: str) -> Dict:
+        current_summary: str) -> Tuple[Dict, Union[None, Dict]]:
+
     svn_path = sql_data.get('svn_path')
     svn_version = sql_data.get('svn_version')
     svn_file = sql_data.get('svn_file')
@@ -62,22 +64,51 @@ def get_sql_commit_data(
     seq_index = current_sql_info.index(sql_data) + 1
     # DB 所属资源组名称：A18 ｜ A19 ｜ QC
     svn_path_up = svn_path.upper()
+    ### yakir_test
     if 'yakir' in svn_file:
         sql_resource_name = 'QC'
         sql_instance_name = 'uat_pg_env'
+        table_catalog = 'dbtest'
+        bk_sql_content_value = get_backup_commit_data(table_catalog, sql_content_value)
+        bk_commit_data = {
+            'sql_index': int(seq_index),
+            'sql_release_info': str(svn_version),
+            'sql': bk_sql_content_value,
+            'workflow_name': f"{current_summary}_备份工单",
+            'resource_tag': sql_resource_name,
+            'instance_tag': sql_instance_name
+        } if bk_sql_content_value else None
+    ###
     elif 'AC' in svn_path_up:
         sql_resource_name = svn_path.split('/')[-2].split('_')[-1].upper()
         sql_instance_name = svn_path.split('/')[-1]
+        bk_commit_data = None
     elif 'QC' in svn_path_up:
         qc_ins_dict = {
             'rex_merchant': 'qc-merchant',
             'rex_admin': 'qc-admin',
-            'rex_rpt': 'qc-report',
+            'rex_rpt': 'qc-report'
         }
         sql_resource_name = re.split(r'[/_]\s*', svn_path_up)[2]
         qc_ins_key = svn_path.split('/')[-1]
-        # qc-merchant=bwup01, qc-admin=bwup02, qc-report=bwup03
         sql_instance_name = qc_ins_dict[qc_ins_key]
+
+        # 实际的 pg 数据库名称
+        qc_db_dict = {
+            'rex_merchant': 'bwup01',
+            'rex_admin': 'bwup02',
+            'rex_rpt': 'bwup03'
+        }
+        table_catalog = qc_db_dict[qc_ins_key]
+        bk_sql_content_value = get_backup_commit_data(table_catalog, sql_content_value)
+        bk_commit_data = {
+            'sql_index': int(seq_index),
+            'sql_release_info': str(svn_version),
+            'sql': bk_sql_content_value,
+            'workflow_name': f"{current_summary}_备份工单",
+            'resource_tag': sql_resource_name,
+            'instance_tag': sql_instance_name
+        } if bk_sql_content_value else None
     else:
         raise ValueError("svn 路径不包含 ac 或 qc 关键字路径，请确认是否正确输入 svn 路径")
     commit_data = {
@@ -88,7 +119,32 @@ def get_sql_commit_data(
         'resource_tag': sql_resource_name,
         'instance_tag': sql_instance_name
     }
-    return commit_data
+    return commit_data, bk_commit_data
+
+def get_backup_commit_data(table_catalog: str, sql_content_value: str) -> Union[None, str]:
+    try:
+        # 解析原始的 dml sql，如果存在 delete update 语句则获取 delete update 语句
+        sql_list = re.split(r";\s*$", sql_content_value, flags=re.MULTILINE)
+        dml_sql_list = [sql.strip() for sql in sql_list if 'delete ' in sql.lower() or 'update ' in sql.lower()]
+        if not dml_sql_list:
+            return None
+
+        # 从 sql 内容获取表名等信息，组装为备份 sql 语句
+        bk_sql_content_value = ""
+        for sql in dml_sql_list:
+            r_matches = re.search(r'(?:delete\sfrom|update)\s(\w+).*(where .*)', sql, flags=re.IGNORECASE|re.DOTALL)
+            if not r_matches:
+                continue
+            # 初始化 pg 类，获取是否存在备份表
+            pg_obj = PostgresClient(table_catalog)
+            bk_table_name = pg_obj.select_bk_table(table_catalog=table_catalog, table_name=r_matches.group(1))
+            bk_sql_content = f"create table {bk_table_name} as select * from {r_matches.group(1)} {r_matches.group(2)};"
+            bk_sql_content_value += f"{bk_sql_content}\n"
+        return bk_sql_content_value
+    except Exception as err:
+        print(err.__str__())
+        return None
+
 
 def filtered_queryset(
         queryset: Any
@@ -105,6 +161,20 @@ def filtered_queryset(
         if row['sql_release_info'] == max_sql_release_info[key]:
             filtered_rows.append(row)
     return filtered_rows
+
+
+# 自定义定长字典类
+class LimitedDict(UserDict):
+    def __init__(self, limit, *args, **kwargs):
+        self.limit = limit
+        super().__init__(*args, **kwargs)
+    def __setitem__(self, key, value):
+        if len(self) >= self.limit:
+            raise ValueError("Dictionary is full")
+        super().__setitem__(key, value)
+# 定义定长全局字典，每次 SQL 升级存入标识，根据标识添加回复内容
+sql_upgrade_flag: LimitedDict = LimitedDict(20)
+
 
 class JiraEventWebhookAPI(JiraWebhookData):
     def __init__(self, request_data: Dict):
@@ -155,6 +225,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
             sql_init_flag = last_issue_obj.init_flag['sql_init_flag']
             current_issue_key = current_issue_data['issue_key']
             current_sql_info = current_issue_data['sql_info']
+            # 过滤掉只在运营执行的 SQL
+            current_sql_info = [item for item in current_sql_info if '运营' not in item['svn_file']]
             current_summary = current_issue_data['summary']
             # current_project = current_issue_data['project']
 
@@ -209,7 +281,22 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 svn_version = sql_data['svn_version']
                 svn_file = sql_data['svn_file']
                 # 获取提交 Archery SQL 工单数据
-                commit_data = get_sql_commit_data(sql_data, current_sql_info, current_summary)
+                # commit_data = get_sql_commit_data(sql_data, current_sql_info, current_summary)
+                commit_data, bk_commit_data = get_sql_commit_data(sql_data, current_sql_info, current_summary)
+
+                # 提交备份 SQL，备份工单提交失败打印消息，不退出
+                if bk_commit_data:
+                    upgrade_bk_result = archery_obj.commit_workflow(bk_commit_data)
+                    try:
+                        bk_name = bk_commit_data.get('workflow_name')
+                        assert upgrade_bk_result['status'], f"备份工单 {bk_name}提交失败"
+                        sql_ser = sqlworkflow_ser(data=upgrade_bk_result['data'])
+                        sql_ser.is_valid(raise_exception=True)
+                        sql_ser.save()
+                        print(f'备份工单{bk_name}提交成功。')
+                    except Exception as err:
+                        print(f'备份工单提交/保存记录异常，异常原因：{err.__str__()}')
+
                 upgrade_result = archery_obj.commit_workflow(commit_data)
                 # 每成功提交一次数据，追加数据到 last_sql_info 数据之后，有失败直接中断提交 SQL 循环流程
                 if upgrade_result['status']:
@@ -240,19 +327,36 @@ class JiraEventWebhookAPI(JiraWebhookData):
         except Exception as err:
             self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = f"<SQL待执行> 状态 webhook 触发失败，异常原因：{err.__str__()}"
-        # self._webhook_return_data['data'] = current_issue_data
         return self._webhook_return_data
 
-    def updated_event_sql_inprogress(self, sql_workflow_obj: Any, current_issue_data: Dict):
+    def updated_event_sql_inprogress(self, sql_workflow_ins: Any, current_issue_data: Dict):
         """
         <SQL执行中> 状态，按升级序号顺序 审核+执行 SQL 工单，出现异常则中断执行
         """
         current_issue_key = current_issue_data['issue_key']
         # current_sql_info = current_issue_data['sql_info']
         current_summary = current_issue_data['summary']
+        # 初始化 Archery 实例，操作工单
+        archery_obj = ArcheryAPI()
 
         # 过滤 sql_workflow QuerySet 数据中 sql_release_info 最大的数据
-        sql_workflow_obj = sql_workflow_obj.objects.filter(workflow_name=current_summary)
+        sql_workflow_obj = sql_workflow_ins.objects.filter(workflow_name=current_summary)
+
+        # 判断是否存在需要备份工单，先执行备份工单再执行后续 SQL
+        try:
+            bk_sql_workflow_obj = sql_workflow_ins.objects.filter(workflow_name=f'{current_summary}_备份工单')
+            bk_sql_workflow_list = filtered_queryset(bk_sql_workflow_obj)
+            assert bk_sql_workflow_list, "备份工单为空，无需备份"
+            for bk_sql_data in bk_sql_workflow_list:
+                w_id = bk_sql_data['w_id']
+                audit_result = archery_obj.audit_workflow(workflow_id=w_id)
+                if not audit_result['status']:
+                    print(audit_result)
+                execute_result = archery_obj.execute_workflow(workflow_id=w_id)
+                if not execute_result['status']:
+                    print(execute_result)
+        except Exception as err:
+            print(f'备份工单审核/执行异常，异常原因：{err.__str__()}')
 
         try:
             # 获取并判断 SQL 工单状态
@@ -260,7 +364,6 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # workflow_review_pass：按顺序执行 SQL 工单，一旦失败终止当前及后续 SQL 工单，将 Jira 状态转换为 <SQL待执行>
             # workflow_queuing ｜ workflow_exception：终止流程
             # workflow_finish：所有工单执行完成，将 Jira 状态触发 <SQL执行成功> 转换到 <CONFIG执行中>
-            archery_obj = ArcheryAPI()
 
             # 开始自动审核，使用 filtered_queryset 函数过滤出 sql_index workflow_name 相同时，sql_release_info 较大的值
             sql_workflow_list = filtered_queryset(sql_workflow_obj)
@@ -348,6 +451,9 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
             self._webhook_return_data[
                 'msg'] = f"升级工单 {current_summary} 所有 SQL 执行成功，触发转换 <SQL升级成功> 到状态 <CONFIG执行中>"
+            # 已工单标题为 key，说明存在 SQL 升级标识
+            global sql_upgrade_flag
+            sql_upgrade_flag[current_summary] = 1
             jira_obj.change_transition(current_issue_key, 'SQL升级成功')
         except Exception as err:
             self._webhook_return_data['status'] = False
@@ -434,6 +540,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             if not code_exists:
                 last_issue_obj.status = 'UAT升级完成'
                 last_issue_obj.init_flag['code_init_flag'] += 1
+                last_issue_obj.code_info = current_code_info
                 last_issue_obj.save()
                 jira_obj.change_transition(current_issue_key, '无代码升级/已升级')
                 self._webhook_return_data[
@@ -465,12 +572,21 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # 实例化 cmdb 对象，调用 upgrade 方法升级代码
             cmdb_obj = CmdbAPI()
             # 升级成功的工程名称列表，用于发送升级答复邮件
-            upgrade_project_name_list = []
+            upgrade_info_list = []
 
             print('开始升级代码.....')
             start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             # 延迟升级，等待 harbor 镜像同步到 gcp
-            sleep(120)
+            sleep(60)
+            # kratos_api_flag = [
+            #     project for project in current_code_info
+            #     if 'cc_api' in project['svn_path']
+            #        or 'rex-user-center' in project['svn_path']
+            # ]
+            # if kratos_api_flag:
+            #     sleep(120)
+            # else:
+            #     sleep(60)
             for code_data in wait_upgrade_list:
                 svn_path = code_data['svn_path']
                 svn_version = code_data['svn_version']
@@ -479,7 +595,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 upgrade_result = cmdb_obj.upgrade(env='UAT', svn_path=svn_path, version=svn_version, tag=tag)
                 if upgrade_result['status']:
                     upgrade_success_list.append(code_data)
-                    upgrade_project_name_list.append(upgrade_result['data'][0]['project'])
+                    upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:30s} 升级版本：{svn_version}")
                     print(f"svn路径 {svn_path} 对应工程升级成功，升级版本：{svn_version}，升级tag：{tag}")
                 else:
                     print(f"svn路径 {svn_path} 对应工程升级失败，升级版本：{svn_version}，升级tag：{tag}，错误原因：{upgrade_result['msg']}")
@@ -487,19 +603,25 @@ class JiraEventWebhookAPI(JiraWebhookData):
             print('代码升级结束.....')
 
             # 只有全部升级成功才转换为<代码升级成功>，只要有失败的升级就转换为<代码升级失败>
-            if upgrade_success_list == current_code_info or not compare_list_info(upgrade_success_list,
-                                                                                  current_code_info):
+            if upgrade_success_list == current_code_info or not compare_list_info(
+                    upgrade_success_list,
+                    current_code_info):
                 last_issue_obj.status = 'UAT升级完成'
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.init_flag['code_init_flag'] += 1
                 last_issue_obj.save()
                 self._webhook_return_data[
                     'msg'] = f"所有代码升级成功，升级工单 {current_summary} 触发转换 <代码升级成功> 到状态 <UAT升级完成>"
-                self._webhook_return_data['data'] = {"已升级工程列表": upgrade_project_name_list}
-                # # 打印升级代码结果
-                # print(generate_template(start_time, end_time, upgrade_project_name_list))
+                self._webhook_return_data['data'] = {"已升级信息列表": upgrade_info_list}
                 # 升级结果发送邮件
-                print(completed_workflow_notice(start_time, end_time,current_summary, upgrade_project_name_list))
+                global sql_upgrade_flag
+                try:
+                    sql_upgrade_flag.pop(current_summary)
+                    upgrade_info_list.append("SQL 已升级到 UAT 环境")
+                except KeyError:
+                    # print(f'工单 {current_summary} 本次无 SQL 升级')
+                    pass
+                print(completed_workflow_notice(start_time, end_time,current_summary, upgrade_info_list))
                 jira_obj.change_transition(current_issue_key, '代码升级成功')
             else:
                 last_issue_obj.status = '代码升级失败'

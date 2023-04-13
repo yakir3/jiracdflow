@@ -82,8 +82,9 @@ class SqlWorkflow(models.Model):
     w_id = models.IntegerField(verbose_name='工单ID', primary_key=True)
     sql_index = models.IntegerField(verbose_name='升级序号', default=0)
     sql_release_info = models.IntegerField(verbose_name='SQL版本信息', default=0)
-    workflow_name = models.ForeignKey('JiraWorkflow', verbose_name='工单名称',
-                                      on_delete=models.CASCADE, to_field='summary', related_name='sql_workflow_name')
+    # workflow_name = models.ForeignKey('JiraWorkflow', verbose_name='工单名称',
+    #                                   on_delete=models.CASCADE, to_field='summary', related_name='sql_workflow_name')
+    workflow_name = models.CharField(verbose_name='工单名称', max_length=256)
     w_status = models.CharField(verbose_name='工单状态', max_length=64)
 
     create_date = models.DateTimeField(default=timezone.now)

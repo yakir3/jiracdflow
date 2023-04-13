@@ -255,7 +255,7 @@ class JiraFlowView(APIView):
                     # SQL执行中 状态，可转变状态：SQL升级成功 ｜ SQL升级失败
                     case 'SQL执行中':
                         webhook_result = jira_event_webhook_obj.updated_event_sql_inprogress(
-                            sql_workflow_obj=SqlWorkflow,
+                            sql_workflow_ins=SqlWorkflow,
                             current_issue_data=jiraworkflow_ser_data
                         )
                     # CONFIG执行中 状态，可转变状态：无配置升级/已升级 ｜ 配置升级成功 ｜ 配置升级失败

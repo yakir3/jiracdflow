@@ -42,6 +42,10 @@ Tool:
     from: xxx
     to: xxx
     receivers: ['xxx']
+  Postgres:
+    host: 1.1.1.1
+    port: 5432
+    database: {user: xxx, password: xxx, database: xxx}
 
 JIRA:
   host: https://xxx.com

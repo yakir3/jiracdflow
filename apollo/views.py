@@ -113,7 +113,7 @@ class ApolloAuthorized(APIView):
             serializer = ApolloAuthorizedSerializer(data=request.data)
             if serializer.is_valid():
                 # 授权操作
-                from util.apollo_operate import ApolloClient
+                from util.apollo_api import ApolloClient
                 apollo_client = ApolloClient()
                 auth_result = apollo_client.add_authorized(**serializer.data)
 

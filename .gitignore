@@ -146,4 +146,5 @@ cython_debug/
 
 # Yakir
 tmp/
+migrations
 config/*.yaml

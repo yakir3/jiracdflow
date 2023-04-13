@@ -4,7 +4,7 @@ import json
 from django.core.exceptions import ObjectDoesNotExist
 
 from cicdflow.models import CICDState
-from cicdflow.views import dlogger
+from cicdflow.views import d_logger
 from util.archery_operate import ArcheryAPI, archery_config
 from util.svn_client import SvnClient
 from util.redis_client import RedisClient
@@ -53,7 +53,7 @@ def sqlstate_task() -> None:
                         instance_id = schema_info['instance_id']
                         db_name = schema_info['db_name']
                     except KeyError:
-                        dlogger.info(f"升级邮件： <{email_title}> ，SQL 工单：{workflow_name} DB 不存在于当前 Archery 已有实例，库名：<{svn_sub_path}>")
+                        d_logger.info(f"升级邮件： <{email_title}> ，SQL 工单：{workflow_name} DB 不存在于当前 Archery 已有实例，库名：<{svn_sub_path}>")
                         continue
                     svn_obj = SvnClient(svn_path)
                     sql_content_value = svn_obj.get_file_content(revision=svn_version, filename=svn_file_name)
@@ -103,13 +103,13 @@ def sqlstate_task() -> None:
         except AssertionError as err:
             we_ins.sql_state = 1
             we_ins.save()
-            dlogger.error(err.__str__())
+            d_logger.error(err.__str__())
         except ObjectDoesNotExist:
             msg = f'当前升级邮件没有待执行 SQL 工单（sql_state=3），忽略本次任务'
-            dlogger.info(msg)
+            d_logger.info(msg)
         except Exception as err:
             msg = f'当前升级邮件待执行 SQL 工单： <{email_title}> 提交失败或异常，异常信息：{err.__str__()}'
-            dlogger.info(msg)
+            d_logger.info(msg)
     # 执行中 SQL 工单，调用 Archery 接口获取工单执行结果
     # in_progress = CICDState.objects.filter(flow_state=3, sql_state=2)
     # for i in range(len(in_progress)):
@@ -129,9 +129,9 @@ def sqlstate_task() -> None:
 #     try:
 #         cicdflow_state = CICDState.objects.filter(flow_state=3, project_state=3, sql_state=0, config_state=0, apollo_state=0)
 #         print(cicdflow_state)
-#         dlogger.info(cicdflow_state)
+#         d_logger.info(cicdflow_state)
 #     except CICDState.DoesNotExist:
-#         dlogger.info('当前没有需执行代码升级邮件，忽略本次任务....')
+#         d_logger.info('当前没有需执行代码升级邮件，忽略本次任务....')
 #     except Exception as err:
 #         print(f'task error: {err}')
 #     return None
