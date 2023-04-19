@@ -76,8 +76,8 @@ class CmdbAPI():
             return {'status':False,'msg':'查询工程异常','data':e}
 
     def upgrade_project(self,id=None,version=None): #传入项目id和version版本升级
-        if id == None or version == None:
-            return {'status':'false','msg':'upgrade_project: id or version is None!'}
+        if id is None or version is None:
+            raise Exception('upgrade_project: id or version is None!')
         try:
             url = self.upgrade_url + str(id)
             data = {
@@ -96,12 +96,12 @@ class CmdbAPI():
         except Exception as e:
             return {'status':False,'msg':'升级工程报错','data':e}
 
-    def upgrade(self,svn_path=None,version=None,env=None,tag=None):
+    def upgrade(self,svn_path=None,svn_version=None,env=None,tag=None):
         # 版本号为空字符串时，不升级代码（只升级 SQL 或配置）
-        if not version:
+        if not svn_version:
             return {'status': True, 'msg': '不升级代码（升级工单只升级 SQL 或配置）', 'data': [{'project': None}]}
 
-        if svn_path == None or version == None or env == None:
+        if svn_path is None or svn_version is None or env is None:
             return {'status': False,'msg':'upgrade_project: svn_path or version or env is None!'}
         try:
             projects_info = self.search_project(svn_path=svn_path,env=env,tag=tag)
@@ -110,17 +110,20 @@ class CmdbAPI():
                 status = True
                 for project_data in projects_info['data']:
                     p_id = project_data['id']
-                    upgrade_res = self.upgrade_project(p_id,version)
+                    upgrade_res = self.upgrade_project(p_id,svn_version)
                     upgrade_res = literal_eval(upgrade_res['data'])
                     i_status = upgrade_res['status']
                     if i_status != '成功': status = False
                     result_list.append(upgrade_res)
-                result = {'status':status,'msg':'升级完毕','data':result_list}
+                code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else '', 'env': env}
+                result = {'status':status,'msg':'升级完毕','data':result_list, 'code_data': code_data}
             else:
-                result = {'status':False,'msg':projects_info['msg'],'data':projects_info['data']}
+                code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else '', 'env': env}
+                result = {'status':False,'msg':projects_info['msg'],'data':projects_info['data'], 'code_data': code_data}
             return result
         except Exception as e:
-            return {'status':False,'msg':'升级失败','data':e}
+            code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else '', 'env': env}
+            return {'status':False,'msg':'升级失败','data':e, 'code_data': code_data}
 
 if __name__ == '__main__':
     pass

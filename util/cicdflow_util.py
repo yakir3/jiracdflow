@@ -2,6 +2,7 @@ from typing import Dict, List, Union, Any, Tuple
 from datetime import datetime
 from time import sleep
 import re
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict, UserDict
 # from django.db.models import Q
 
@@ -145,7 +146,6 @@ def get_backup_commit_data(table_catalog: str, sql_content_value: str) -> Union[
         print(err.__str__())
         return None
 
-
 def filtered_queryset(
         queryset: Any
 ):
@@ -162,6 +162,42 @@ def filtered_queryset(
             filtered_rows.append(row)
     return filtered_rows
 
+def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upgrade_info_list: List) -> Tuple:
+    # 实例化 cmdb 对象，调用 upgrade 方法升级代码
+    cmdb_obj = CmdbAPI()
+
+    # 延迟升级，等待 harbor 镜像同步到 gcp
+    sleep(60)
+    # kratos_api_flag = [
+    #     project for project in current_code_info
+    #     if 'cc_api' in project['svn_path']
+    #        or 'rex-user-center' in project['svn_path']
+    # ]
+    # if kratos_api_flag:
+    #     sleep(120)
+    # else:
+    #     sleep(60)
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        futures = []
+        # 循环带升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
+        for code_data in wait_upgrade_list:
+            # code_data['env'] = current_environment
+            code_data['env'] = 'UAT'
+            future = executor.submit(cmdb_obj.upgrade, **code_data)
+            futures.append(future)
+        # 获取升级结果列表，根据列表状态返回升级结果
+        upgrade_results = [future.result() for future in futures]
+        for upgrade_result in upgrade_results:
+            urcd = upgrade_result['code_data']
+            if upgrade_result['status']:
+                # upgrade_success_list.append(code_data)
+                upgrade_success_list.append(urcd)
+                upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:30s} 升级版本：{urcd['svn_version']}")
+                print(f"svn路径 {urcd['svn_path']} 对应工程升级成功，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}")
+            else:
+                print(
+                    f"svn路径 {urcd['svn_path']} 对应工程升级失败，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}，错误原因：{upgrade_result['msg']}")
+        return upgrade_success_list, upgrade_info_list
 
 # 自定义定长字典类
 class LimitedDict(UserDict):
@@ -568,39 +604,18 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 wait_upgrade_list = last_code_info
                 # 已成功升级的 code_info 数据
                 upgrade_success_list = []
-
-            # 实例化 cmdb 对象，调用 upgrade 方法升级代码
-            cmdb_obj = CmdbAPI()
+            # # 实例化 cmdb 对象，调用 upgrade 方法升级代码
+            # cmdb_obj = CmdbAPI()
             # 升级成功的工程名称列表，用于发送升级答复邮件
             upgrade_info_list = []
 
             print('开始升级代码.....')
             start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            # 延迟升级，等待 harbor 镜像同步到 gcp
-            sleep(60)
-            # kratos_api_flag = [
-            #     project for project in current_code_info
-            #     if 'cc_api' in project['svn_path']
-            #        or 'rex-user-center' in project['svn_path']
-            # ]
-            # if kratos_api_flag:
-            #     sleep(120)
-            # else:
-            #     sleep(60)
-            for code_data in wait_upgrade_list:
-                svn_path = code_data['svn_path']
-                svn_version = code_data['svn_version']
-                tag = code_data['tag']
-                # upgrade_result = cmdb_obj.upgrade(env=current_environment, svn_path=svn_path, version=version, tag=tag)
-                upgrade_result = cmdb_obj.upgrade(env='UAT', svn_path=svn_path, version=svn_version, tag=tag)
-                if upgrade_result['status']:
-                    upgrade_success_list.append(code_data)
-                    upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:30s} 升级版本：{svn_version}")
-                    print(f"svn路径 {svn_path} 对应工程升级成功，升级版本：{svn_version}，升级tag：{tag}")
-                else:
-                    print(f"svn路径 {svn_path} 对应工程升级失败，升级版本：{svn_version}，升级tag：{tag}，错误原因：{upgrade_result['msg']}")
+            upgrade_success_list, upgrade_info_list = thread_upgrade_code(wait_upgrade_list, upgrade_success_list, upgrade_info_list)
             end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('代码升级结束.....')
+            # print(upgrade_success_list)
+            # print(current_code_info)
 
             # 只有全部升级成功才转换为<代码升级成功>，只要有失败的升级就转换为<代码升级失败>
             if upgrade_success_list == current_code_info or not compare_list_info(
@@ -621,7 +636,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 except KeyError:
                     # print(f'工单 {current_summary} 本次无 SQL 升级')
                     pass
-                print(completed_workflow_notice(start_time, end_time,current_summary, upgrade_info_list))
+                print(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
                 jira_obj.change_transition(current_issue_key, '代码升级成功')
             else:
                 last_issue_obj.status = '代码升级失败'
@@ -631,6 +646,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 self._webhook_return_data['status'] = False
                 self._webhook_return_data[
                     'msg'] = f"代码升级失败，升级工单 {current_summary} 触发转换 <代码升级失败> 到状态 <开发/运维修改>"
+                # self._webhook_return_data['data'] = current_issue_data
                 jira_obj.change_transition(current_issue_key, '代码升级失败')
         except Exception as err:
             self._webhook_return_data['status'] = False

@@ -32,7 +32,7 @@ class PostgresClient(object):
             sql_content = f"""select table_name from information_schema."tables" t where
 table_schema = '{table_scheme}'
 and table_catalog = '{table_catalog}'
-and table_name like 'bk_{today_format}_{table_name}_%';"""
+and table_name like 'bk_{today_format}_%_{table_name}%';"""
             self._cursor.execute(sql_content)
             # 查询当前是否存在备份表，返回备份表名
             execute_result = self._cursor.fetchall()

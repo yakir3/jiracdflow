@@ -136,8 +136,23 @@ class CICDFlowView(APIView):
                     issue_key = jira_issue_obj.issue_key
                     issue_status = jira_issue_obj.status
                     # 判断 issue 状态是否为 <SQL待执行> 或 <UAT升级完成>，非此状态抛出异常，不允许更新 issue 数据
-                    if issue_status == 'SQL待执行' or issue_status == 'UAT升级完成':
+                    if issue_status == 'UAT升级完成':
                         d_logger.debug(f"工单：{current_summary} 状态为 <SQL待执行> 或 <UAT升级完成>，正常流转流程")
+                        c1_result = jira_obj.change_transition(issue_key, 'UAT自动迭代升级')
+                        c2_result = jira_obj.change_transition(issue_key, '触发提交SQL')
+                        if not c1_result['status'] and not c2_result['status']:
+                            _return_data[
+                                'msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{c1_result['data']} <---> {c2_result['data']}"
+                            d_logger.warning(_return_data)
+                        # 从 <UAT升级完成> 状态变更，开始迭代升级
+                        else:
+                            _return_data['status'] = True
+                            _return_data['msg'] = '已存在 Jira 工单，转换工单状态到<UAT自动迭代升级>，开始自动迭代升级流程。'
+                            d_logger.info(_return_data)
+                    elif issue_status == 'SQL待执行':
+                        _return_data['status'] = True
+                        _return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行>，无需触发流程，自动触发 webhook"
+                        d_logger.info(_return_data)
                     else:
                         _return_data['msg'] = '当前工单 issue 状态非 <SQL待执行> 或 <UAT升级完成>，不允许开始升级流程，检查当前工单状态'
                         d_logger.warning(_return_data)
@@ -148,22 +163,6 @@ class CICDFlowView(APIView):
                         _return_data['msg'] = update_result['data']
                         d_logger.warning(_return_data)
                         return Response(data=_return_data, status=status.HTTP_200_OK)
-                    # 转换 Jira 工单状态，获取结果
-                    c1_result = jira_obj.change_transition(issue_key, 'UAT自动迭代升级')
-                    c2_result = jira_obj.change_transition(issue_key, '触发提交SQL')
-                    if not c1_result['status'] and not c2_result['status']:
-                        _return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{c1_result['data']} <---> {c2_result['data']}"
-                        d_logger.warning(_return_data)
-                    # 从 <SQL待执行> 状态变更，重新提交 SQL
-                    elif not c1_result['status'] and c2_result['status']:
-                        _return_data['status'] = True
-                        _return_data['msg'] = f"已存在 Jira 工单，状态为 <SQL待执行>，重新提交 SQL 文件触发手动提交 SQL，开始升级流程。"
-                        d_logger.info(_return_data)
-                    # 从 <UAT升级完成> 状态变更，开始迭代升级
-                    else:
-                        _return_data['status'] = True
-                        _return_data['msg'] = '已存在 Jira 工单，转换工单状态到<UAT自动迭代升级>，开始自动迭代升级流程。'
-                        d_logger.info(_return_data)
                     return Response(data=_return_data, status=status.HTTP_200_OK)
                 # 不存在工单，新建 Jira 工单触发 issue_updated 事件
                 else:
