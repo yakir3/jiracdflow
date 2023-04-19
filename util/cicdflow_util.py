@@ -189,8 +189,8 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
         upgrade_results = [future.result() for future in futures]
         for upgrade_result in upgrade_results:
             urcd = upgrade_result['code_data']
+            # urcd.pop('env')
             if upgrade_result['status']:
-                # upgrade_success_list.append(code_data)
                 upgrade_success_list.append(urcd)
                 upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:30s} 升级版本：{urcd['svn_version']}")
                 print(f"svn路径 {urcd['svn_path']} 对应工程升级成功，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}")
@@ -604,6 +604,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 wait_upgrade_list = last_code_info
                 # 已成功升级的 code_info 数据
                 upgrade_success_list = []
+
             # # 实例化 cmdb 对象，调用 upgrade 方法升级代码
             # cmdb_obj = CmdbAPI()
             # 升级成功的工程名称列表，用于发送升级答复邮件
@@ -614,9 +615,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
             upgrade_success_list, upgrade_info_list = thread_upgrade_code(wait_upgrade_list, upgrade_success_list, upgrade_info_list)
             end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('代码升级结束.....')
-            # print(upgrade_success_list)
-            # print(current_code_info)
 
+            current_code_info = [{k: v for k, v in d.items() if k != 'env'} for d in current_code_info]
             # 只有全部升级成功才转换为<代码升级成功>，只要有失败的升级就转换为<代码升级失败>
             if upgrade_success_list == current_code_info or not compare_list_info(
                     upgrade_success_list,

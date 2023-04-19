@@ -115,14 +115,14 @@ class CmdbAPI():
                     i_status = upgrade_res['status']
                     if i_status != '成功': status = False
                     result_list.append(upgrade_res)
-                code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else '', 'env': env}
+                code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
                 result = {'status':status,'msg':'升级完毕','data':result_list, 'code_data': code_data}
             else:
-                code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else '', 'env': env}
+                code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
                 result = {'status':False,'msg':projects_info['msg'],'data':projects_info['data'], 'code_data': code_data}
             return result
         except Exception as e:
-            code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else '', 'env': env}
+            code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
             return {'status':False,'msg':'升级失败','data':e, 'code_data': code_data}
 
 if __name__ == '__main__':
