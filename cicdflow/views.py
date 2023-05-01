@@ -108,7 +108,7 @@ class CICDFlowView(APIView):
         )
     )
     def post(self, request, *args, **kwargs):
-        _return_data = {'status': False, 'msg': '', 'data': request.data}
+        return_data = {'status': False, 'msg': '', 'data': request.data}
         try:
             # 简单 token 认证
             authorization = request.headers.get('Authorization', None)
@@ -141,54 +141,60 @@ class CICDFlowView(APIView):
                         c1_result = jira_obj.change_transition(issue_key, 'UAT自动迭代升级')
                         c2_result = jira_obj.change_transition(issue_key, '触发提交SQL')
                         if not c1_result['status'] and not c2_result['status']:
-                            _return_data[
+                            return_data[
                                 'msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{c1_result['data']} <---> {c2_result['data']}"
-                            d_logger.warning(_return_data)
+                            d_logger.warning(return_data)
                         # 从 <UAT升级完成> 状态变更，开始迭代升级
                         else:
-                            _return_data['status'] = True
-                            _return_data['msg'] = '已存在 Jira 工单，转换工单状态到<UAT自动迭代升级>，开始自动迭代升级流程。'
-                            d_logger.info(_return_data)
+                            return_data['status'] = True
+                            return_data['msg'] = '已存在 Jira 工单，转换工单状态到<UAT自动迭代升级>，开始完整迭代升级流程。'
+                            return_data['jira_issue_key'] = issue_key
+                            d_logger.info(return_data)
+                    # SQL待执行 状态会自动触发 webhook，无需人为调用 change_transition 方法变更状态
                     elif issue_status == 'SQL待执行':
-                        _return_data['status'] = True
-                        _return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行>，无需触发流程，自动触发 webhook"
-                        d_logger.info(_return_data)
+                        return_data['status'] = True
+                        return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行>，重新提交 SQL 触发完整升级流程"
+                        return_data['jira_issue_key'] = issue_key
+                        d_logger.info(return_data)
+                        # 更新 Jira 工单，失败时抛出异常
+                        update_result = jira_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
+                        if not update_result['status']:
+                            return_data['status'] = False
+                            return_data['msg'] = update_result['data']
+                            d_logger.warning(return_data)
+                        return Response(data=return_data, status=status.HTTP_200_OK)
                     else:
-                        _return_data['msg'] = '当前工单 issue 状态非 <SQL待执行> 或 <UAT升级完成>，不允许开始升级流程，检查当前工单状态'
-                        d_logger.warning(_return_data)
-                        return Response(data=_return_data, status=status.HTTP_200_OK)
-                    # 更新 Jira 工单，失败时抛出异常
-                    update_result = jira_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
-                    if not update_result['status']:
-                        _return_data['msg'] = update_result['data']
-                        d_logger.warning(_return_data)
-                        return Response(data=_return_data, status=status.HTTP_200_OK)
-                    return Response(data=_return_data, status=status.HTTP_200_OK)
+                        return_data['msg'] = '当前工单 issue 状态非 <SQL待执行> 或 <UAT升级完成>，不允许开始升级流程，检查当前工单状态'
+                        d_logger.warning(return_data)
+                        return Response(data=return_data, status=status.HTTP_200_OK)
+
                 # 不存在工单，新建 Jira 工单触发 issue_updated 事件
                 else:
                     c_result = jira_obj.issue_create(args=cicdflow_ser_data)
                     # 新建工单失败，返回错误信息
                     if not c_result['status']:
-                        _return_data['msg'] = c_result['data']
-                        d_logger.warning(_return_data)
-                        return Response(data=_return_data, status=status.HTTP_200_OK)
-                    _return_data['status'] = True
-                    _return_data['msg'] = '首次发包升级创建 Jira 工单成功，开始自动升级流程。'
-                    d_logger.info(_return_data)
-                    return Response(data=_return_data, status=status.HTTP_201_CREATED)
-            _return_data['msg'] = f"升级数据合法性未通过或提交到Jira失败，需检查请求 body 内容. 错误信息：{cicdflow_ser.errors}"
-            d_logger.error(_return_data)
-            return Response(data=_return_data, status=status.HTTP_400_BAD_REQUEST)
+                        return_data['msg'] = c_result['data']
+                        d_logger.warning(return_data)
+                        return Response(data=return_data, status=status.HTTP_406_NOT_ACCEPTABLE)
+                    jira_issue_obj = JiraWorkflow.objects.get(summary=current_summary)
+                    return_data['status'] = True
+                    return_data['msg'] = '首次发包升级创建 Jira 工单成功，开始自动升级流程。'
+                    return_data['jira_issue_key'] = jira_issue_obj.issue_key
+                    d_logger.info(return_data)
+                    return Response(data=return_data, status=status.HTTP_201_CREATED)
+            return_data['msg'] = f"升级数据合法性未通过或提交到Jira失败，需检查请求 body 内容. 错误信息：{cicdflow_ser.errors}"
+            d_logger.error(return_data)
+            return Response(data=return_data, status=status.HTTP_400_BAD_REQUEST)
         except AssertionError:
-            _return_data['status'] = False
-            _return_data['msg'] = '验证 token 失败，请检查是否正确携带 Authorization header'
-            d_logger.error(_return_data)
-            return Response(data=_return_data, status=status.HTTP_401_UNAUTHORIZED)
+            return_data['status'] = False
+            return_data['msg'] = '验证 token 失败，请检查是否正确携带 Authorization header'
+            d_logger.error(return_data)
+            return Response(data=return_data, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as err:
-            _return_data['status'] = False
-            _return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err.__str__()}"
-            d_logger.error(_return_data)
-            return Response(data=_return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return_data['status'] = False
+            return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err.__str__()}"
+            d_logger.error(return_data)
+            return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # Jira 升级自动化流程

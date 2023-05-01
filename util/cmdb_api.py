@@ -26,7 +26,7 @@ class CmdbAPI():
         pass
 
     def search_project(self,svn_path=None,env=None,tag=None):
-        if svn_path == None or env == None:
+        if svn_path is None or env is None:
             return {'status':'false','msg':'search_project: svn_path or env is None!'}
         try:
             env = env.upper()
@@ -97,9 +97,15 @@ class CmdbAPI():
             return {'status':False,'msg':'升级工程报错','data':e}
 
     def upgrade(self,svn_path=None,svn_version=None,env=None,tag=None):
+        # svn 路径结尾 prod，不升级代码，直接返回成功
+        if svn_path.endswith('prod') and env == 'UAT':
+            code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
+            return {'status': True, 'msg': '运营环境 svn 路径，不升级代码', 'data': [{'project': "no_project"}], 'code_data': code_data}
+
         # 版本号为空字符串时，不升级代码（只升级 SQL 或配置）
         if not svn_version:
-            return {'status': True, 'msg': '不升级代码（升级工单只升级 SQL 或配置）', 'data': [{'project': None}]}
+            code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
+            return {'status': True, 'msg': '不升级代码（升级工单只升级 SQL 或配置）', 'data': [{'project': None}], 'code_data': code_data}
 
         if svn_path is None or svn_version is None or env is None:
             return {'status': False,'msg':'upgrade_project: svn_path or version or env is None!'}

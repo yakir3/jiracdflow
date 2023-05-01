@@ -37,13 +37,16 @@ and table_name like 'bk_{today_format}_%_{table_name}%';"""
             # 查询当前是否存在备份表，返回备份表名
             execute_result = self._cursor.fetchall()
             if not execute_result:
-                bk_table_name = f"bk_{today_format}_1_{table_name}"
+                # bk_table_name = f"bk_{today_format}_1_{table_name}"
+                bk_table_name_list = ['bk', today_format, '1', table_name]
             else:
                 last_bk_table_name = execute_result[-1][0]
-                # current_bk_index = int(last_bk_table_name.split('_')[-1]) + 1
+                # current_bk_index = int(last_bk_table_name.split('_')[2]) + 1
+                # bk_table_name = f"bk_{today_format}_{current_bk_index}_{table_name}"
                 current_bk_index = int(last_bk_table_name.split('_')[2]) + 1
-                bk_table_name = f"bk_{today_format}_{current_bk_index}_{table_name}"
-            return bk_table_name
+                bk_table_name_list = ['bk', today_format, str(current_bk_index), table_name]
+            # return bk_table_name
+            return bk_table_name_list
 
         except Exception as err:
             return_data = {

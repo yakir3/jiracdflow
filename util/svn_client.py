@@ -33,7 +33,7 @@ class SvnClient(object):
                 shutil.rmtree(f'{tmp_path}')
                 return file_content
         except Exception as err:
-            print(err.__str__())
+            print(f"svn 获取 sql 内容时异常，异常原因：{err.__str__()}")
             # 清理 svn 临时目录
             shutil.rmtree(f'{tmp_path}')
 

@@ -56,7 +56,7 @@ WHERE rc.merchant_id = 'QC' and rc.login_name IN ({username_str});
         # 提交工单失败直接返回，不继续审核 & 执行流程
         if not commit_res['status']:
             return commit_res
-        wid = commit_res['data']['id']
+        wid = commit_res['data']['w_id']
 
         # 审核工单，审核失败退出
         audit_res = archery_obj.audit_workflow(workflow_id=wid)

@@ -132,13 +132,21 @@ def get_backup_commit_data(table_catalog: str, sql_content_value: str) -> Union[
 
         # 从 sql 内容获取表名等信息，组装为备份 sql 语句
         bk_sql_content_value = ""
+        bk_table_flag = []
         for sql in dml_sql_list:
             r_matches = re.search(r'(?:delete\sfrom|update)\s(\w+).*(where .*)', sql, flags=re.IGNORECASE|re.DOTALL)
             if not r_matches:
                 continue
             # 初始化 pg 类，获取是否存在备份表
             pg_obj = PostgresClient(table_catalog)
-            bk_table_name = pg_obj.select_bk_table(table_catalog=table_catalog, table_name=r_matches.group(1))
+            # 获取备份表名，同一工单同个表多个备份
+            bk_table_name_list = pg_obj.select_bk_table(table_catalog=table_catalog, table_name=r_matches.group(1))
+            if not bk_table_flag:
+                bk_table_flag = bk_table_name_list
+                bk_table_name = '_'.join(bk_table_name_list)
+            else:
+                bk_table_flag[2] = str(int(bk_table_flag[2]) + 1)
+                bk_table_name = '_'.join(bk_table_flag)
             bk_sql_content = f"create table {bk_table_name} as select * from {r_matches.group(1)} {r_matches.group(2)};"
             bk_sql_content_value += f"{bk_sql_content}\n"
         return bk_sql_content_value
@@ -179,7 +187,7 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
     #     sleep(60)
     with ThreadPoolExecutor(max_workers=7) as executor:
         futures = []
-        # 循环带升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
+        # 循环待升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
         for code_data in wait_upgrade_list:
             # code_data['env'] = current_environment
             code_data['env'] = 'UAT'
@@ -189,11 +197,22 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
         upgrade_results = [future.result() for future in futures]
         for upgrade_result in upgrade_results:
             urcd = upgrade_result['code_data']
+            upgr_p = upgrade_result['data'][0]['project']
             # urcd.pop('env')
             if upgrade_result['status']:
                 upgrade_success_list.append(urcd)
-                upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:30s} 升级版本：{urcd['svn_version']}")
-                print(f"svn路径 {urcd['svn_path']} 对应工程升级成功，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}")
+                if upgr_p:
+                    # prod 工程不做升级
+                    if upgr_p == "no_project":
+                        print(f"{upgrade_result['msg']}")
+                    else:
+                        upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:30s} 升级版本：{urcd['svn_version']}")
+                        print(
+                            f"svn路径 {urcd['svn_path']} 对应工程升级成功，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}")
+                # 没有升级工程，只有 SQL 或配置升级
+                else:
+                    upgrade_info_list.append(None)
+                    print(f"{upgrade_result['msg']}")
             else:
                 print(
                     f"svn路径 {urcd['svn_path']} 对应工程升级失败，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}，错误原因：{upgrade_result['msg']}")
