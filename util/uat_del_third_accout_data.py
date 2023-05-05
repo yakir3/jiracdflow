@@ -44,7 +44,6 @@ WHERE rcer.merchant_id = 'QC' and rcer.login_name IN ({username_str});
 DELETE FROM r_customer rc
 WHERE rc.merchant_id = 'QC' and rc.login_name IN ({username_str});
 """
-
         # 提交工单
         commit_data = {
             'sql': delete_sql_content,
@@ -70,7 +69,7 @@ WHERE rc.merchant_id = 'QC' and rc.login_name IN ({username_str});
         # 等待10s SQL 工单执行完成，状态变化为成功
         time.sleep(10)
 
-        # 审核 & 执行都无出错，查询工单结果，返回数据
+        # # 审核 & 执行都无出错，查询工单结果，返回数据
         select_res = archery_obj.get_workflows(args={'id': wid})
         if not select_res['status']:
             return select_res

@@ -18,7 +18,7 @@ d_logger = logging.getLogger('default_logger')
 # 接收自动发包系统请求，创建或迭代更新 Jira 升级工单
 class CICDFlowView(APIView):
     @swagger_auto_schema(
-        operation_summary="新增Jira升级工单",
+        operation_summary="触发Jira升级工单流程",
         operation_description="",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
@@ -105,10 +105,25 @@ class CICDFlowView(APIView):
                 ),
             },
             required=['project', 'summary', 'env', 'sql_info', 'config_info', 'apollo_info', 'code_info']
-        )
+        ),
+        responses={
+            201: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'status': openapi.Schema(type=openapi.TYPE_BOOLEAN,description='接口返回状态'),
+                    'msg': openapi.Schema(type=openapi.TYPE_STRING, description='返回消息'),
+                    'data': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={},
+                        description='返回数据'),
+                    'jira_issue_key': openapi.Schema(type=openapi.TYPE_STRING, description='jira 工单标识,status 为 True 时返回')
+                }
+            ),
+            400: 'Bad Request'
+        }
     )
     def post(self, request, *args, **kwargs):
-        return_data = {'status': False, 'msg': '', 'data': request.data}
+        return_data = {'status': False, 'msg': '', 'data': request.data, 'jira_issue_data': ''}
         try:
             # 简单 token 认证
             authorization = request.headers.get('Authorization', None)
@@ -139,10 +154,11 @@ class CICDFlowView(APIView):
                     if issue_status == 'UAT升级完成':
                         d_logger.debug(f"工单：{current_summary} 状态为 <SQL待执行> 或 <UAT升级完成>，正常流转流程")
                         c1_result = jira_obj.change_transition(issue_key, 'UAT自动迭代升级')
-                        c2_result = jira_obj.change_transition(issue_key, '触发提交SQL')
-                        if not c1_result['status'] and not c2_result['status']:
-                            return_data[
-                                'msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{c1_result['data']} <---> {c2_result['data']}"
+                        # c2_result = jira_obj.change_transition(issue_key, '触发提交SQL')
+                        # if not c1_result['status'] and not c2_result['status']:
+                        #     return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{c1_result['data']} <---> {c2_result['data']}"
+                        if not c1_result['status']:
+                            return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{c1_result['data']}"
                             d_logger.warning(return_data)
                         # 从 <UAT升级完成> 状态变更，开始迭代升级
                         else:
@@ -156,18 +172,17 @@ class CICDFlowView(APIView):
                         return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行>，重新提交 SQL 触发完整升级流程"
                         return_data['jira_issue_key'] = issue_key
                         d_logger.info(return_data)
-                        # 更新 Jira 工单，失败时抛出异常
-                        update_result = jira_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
-                        if not update_result['status']:
-                            return_data['status'] = False
-                            return_data['msg'] = update_result['data']
-                            d_logger.warning(return_data)
-                        return Response(data=return_data, status=status.HTTP_200_OK)
                     else:
                         return_data['msg'] = '当前工单 issue 状态非 <SQL待执行> 或 <UAT升级完成>，不允许开始升级流程，检查当前工单状态'
                         d_logger.warning(return_data)
                         return Response(data=return_data, status=status.HTTP_200_OK)
-
+                    # 更新 Jira 工单，失败时抛出异常
+                    update_result = jira_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
+                    if not update_result['status']:
+                        return_data['status'] = False
+                        return_data['msg'] = update_result['data']
+                        d_logger.warning(return_data)
+                    return Response(data=return_data, status=status.HTTP_200_OK)
                 # 不存在工单，新建 Jira 工单触发 issue_updated 事件
                 else:
                     c_result = jira_obj.issue_create(args=cicdflow_ser_data)

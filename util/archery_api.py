@@ -14,7 +14,7 @@ __all__ = ['ArcheryAPI']
 
 class ArcheryAPI(object):
     def __init__(self,archery_conf=archery_config):
-        self.url = archery_conf.get('url','https://uat-archery-api.ccacuat.com/api')
+        self.url = archery_conf.get('url','https://uat-archery-api.opsre.net/api')
         self.sql_run_max_time = 3 #单位day
         self.__username = archery_conf.get('username')
         self.__password = archery_conf.get('password')
@@ -196,6 +196,7 @@ class ArcheryAPI(object):
 
             res = requests.post(url=url,json=data,headers=self.headers)
             res_data = res.json()
+            print(res_data)
             if res.status_code == 201:
                 # workflow_abort                工作流中止
                 # workflow_autoreviewwrong      工作流程自动审核错误

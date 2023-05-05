@@ -175,17 +175,11 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
     cmdb_obj = CmdbAPI()
 
     # 延迟升级，等待 harbor 镜像同步到 gcp
-    sleep(60)
-    # kratos_api_flag = [
-    #     project for project in current_code_info
-    #     if 'cc_api' in project['svn_path']
-    #        or 'rex-user-center' in project['svn_path']
-    # ]
-    # if kratos_api_flag:
-    #     sleep(120)
-    # else:
-    #     sleep(60)
-    with ThreadPoolExecutor(max_workers=7) as executor:
+    if len(wait_upgrade_list) < 5:
+        sleep(60)
+    else:
+        sleep(90)
+    with ThreadPoolExecutor(max_workers=10) as executor:
         futures = []
         # 循环待升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
         for code_data in wait_upgrade_list:
@@ -206,7 +200,7 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
                     if upgr_p == "no_project":
                         print(f"{upgrade_result['msg']}")
                     else:
-                        upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:30s} 升级版本：{urcd['svn_version']}")
+                        upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:35s} 升级版本: {urcd['svn_version']}")
                         print(
                             f"svn路径 {urcd['svn_path']} 对应工程升级成功，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}")
                 # 没有升级工程，只有 SQL 或配置升级
@@ -629,11 +623,11 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # 升级成功的工程名称列表，用于发送升级答复邮件
             upgrade_info_list = []
 
-            print('开始升级代码.....')
             start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f'开始升级代码，开始时间：{start_time}')
             upgrade_success_list, upgrade_info_list = thread_upgrade_code(wait_upgrade_list, upgrade_success_list, upgrade_info_list)
             end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('代码升级结束.....')
+            print(f'代码升级结束，结束时间：{end_time}')
 
             current_code_info = [{k: v for k, v in d.items() if k != 'env'} for d in current_code_info]
             # 只有全部升级成功才转换为<代码升级成功>，只要有失败的升级就转换为<代码升级失败>

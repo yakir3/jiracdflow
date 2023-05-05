@@ -11,12 +11,12 @@ __all__ = ['CmdbAPI']
 # 获取 JIRA 配置信息
 cmdb_config = GetYamlConfig().get_config('CMDB')
 
-class CmdbAPI():
-    def __init__(self, cmdb_config=cmdb_config):
-        self.search_url = cmdb_config.get('search_url')
-        self.upgrade_url = cmdb_config.get('upgrade_url')
-        self.domain = cmdb_config.get('domain')
-        self.token = cmdb_config.get('token')
+class CmdbAPI:
+    def __init__(self, config=cmdb_config):
+        self.search_url = config.get('search_url')
+        self.upgrade_url = config.get('upgrade_url')
+        self.domain = config.get('domain')
+        self.token = config.get('token')
         self.headers = {
             'content-type':'application/json',
             'access-token': self.token,
@@ -44,7 +44,7 @@ class CmdbAPI():
                 all_res = all_res.json()
                 if all_res['code'] == 200:
                     size = 0
-                    reslut_list = []
+                    result_list = []
                     for project_info in all_res['data']['items']:
                         project_svn = project_info['project']['svn_path']
                         _svn = '/'.join(project_svn.split('/')[3::])
@@ -62,11 +62,11 @@ class CmdbAPI():
                             if not tag and env == "PRO" and _tag == "TEST": #运营环境不传入tag:test就跳过运测
                                 continue
                             size += 1
-                            reslut_list.append(project_info)
+                            result_list.append(project_info)
                     if size != 0:
-                        result = {'status':True,'msg':'查询完毕','data':reslut_list}
+                        result = {'status':True,'msg':'查询完毕','data':result_list}
                     else:
-                        result = {'status': False, 'msg': '未查询到此工程', 'data': reslut_list}
+                        result = {'status': False, 'msg': '未查询到此工程', 'data': result_list}
                 else:
                     result = {'status':False,'msg':f'工程查询接口返回状态码 {all_res["code"]}','data':f'{all_res}'}
             else:
