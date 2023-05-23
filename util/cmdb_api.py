@@ -51,7 +51,7 @@ class CmdbAPI:
                         name = project_info['project']['name']
                         _env = name.split('_')[0].upper()
                         _tag = name.split('_')[-1].upper()
-                        tag_list = ['V1','V2','V3','TEST']
+                        tag_list = ['V1', 'V2', 'V3', 'V4', 'TEST']
                         if _svn == svn_path:
                             if env == "PRO" and _env == 'UAT': # PRO环境跳过UAT_开头工程
                                 continue
@@ -96,19 +96,26 @@ class CmdbAPI:
         except Exception as e:
             return {'status':False,'msg':'升级工程报错','data':e}
 
-    def upgrade(self,svn_path=None,svn_version=None,env=None,tag=None):
+    def upgrade(self,svn_path=None,svn_version=None,tag=None, env='UAT'):
+        if svn_path is None or svn_version is None:
+            return {'status': False,'msg':'upgrade_project: svn_path or version is None!'}
+
+        # tag 条件过滤
+        tag = '' if tag == 'v1' else tag
+        real_tag = 'v1' if tag is None or tag == '' else tag
+
+        # 返回升级的代码升级信息
+        code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': real_tag}
+
         # svn 路径结尾 prod，不升级代码，直接返回成功
         if svn_path.endswith('prod') and env == 'UAT':
-            code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
             return {'status': True, 'msg': '运营环境 svn 路径，不升级代码', 'data': [{'project': "no_project"}], 'code_data': code_data}
 
         # 版本号为空字符串时，不升级代码（只升级 SQL 或配置）
         if not svn_version:
-            code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
+            # code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': real_tag}
             return {'status': True, 'msg': '不升级代码（升级工单只升级 SQL 或配置）', 'data': [{'project': None}], 'code_data': code_data}
 
-        if svn_path is None or svn_version is None or env is None:
-            return {'status': False,'msg':'upgrade_project: svn_path or version or env is None!'}
         try:
             projects_info = self.search_project(svn_path=svn_path,env=env,tag=tag)
             result_list = []
@@ -121,15 +128,12 @@ class CmdbAPI:
                     i_status = upgrade_res['status']
                     if i_status != '成功': status = False
                     result_list.append(upgrade_res)
-                code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
                 result = {'status':status,'msg':'升级完毕','data':result_list, 'code_data': code_data}
             else:
-                code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
                 result = {'status':False,'msg':projects_info['msg'],'data':projects_info['data'], 'code_data': code_data}
             return result
-        except Exception as e:
-            code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': tag if not None else ''}
-            return {'status':False,'msg':'升级失败','data':e, 'code_data': code_data}
+        except Exception as err:
+            return {'status':False,'msg':'升级失败','data': err.__str__(), 'code_data': code_data}
 
 if __name__ == '__main__':
     pass

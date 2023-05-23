@@ -196,7 +196,6 @@ class ArcheryAPI(object):
 
             res = requests.post(url=url,json=data,headers=self.headers)
             res_data = res.json()
-            print(res_data)
             if res.status_code == 201:
                 # workflow_abort                工作流中止
                 # workflow_autoreviewwrong      工作流程自动审核错误

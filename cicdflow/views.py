@@ -123,7 +123,7 @@ class CICDFlowView(APIView):
         }
     )
     def post(self, request, *args, **kwargs):
-        return_data = {'status': False, 'msg': '', 'data': request.data, 'jira_issue_data': ''}
+        return_data = {'status': False, 'msg': '', 'data': request.data, 'jira_issue_key': ''}
         try:
             # 简单 token 认证
             authorization = request.headers.get('Authorization', None)
@@ -138,9 +138,21 @@ class CICDFlowView(APIView):
                 # 获取序列化后的 request_data 数据
                 cicdflow_ser_data = dict(cicdflow_ser.validated_data)
 
-                # project 参数为 A18 A19 转换为 AC 项目
-                if cicdflow_ser_data['project'] == 'A18' or cicdflow_ser_data['project'] == 'A19':
-                    cicdflow_ser_data['project'] = 'AC'
+                # project 参数区分项目列表
+                ac_project_list = [
+                    'A22',
+                    'QC',
+                    'A18',
+                    'A19',
+                    'RS8',
+                    'B01',
+                ]
+                current_project = cicdflow_ser_data['project']
+                if current_project in ac_project_list:
+                    cicdflow_ser_data['project'] = 'AC' if current_project != 'QC' else current_project
+                else:
+                    return_data['msg'] = f"Jira 不存在项目 {current_project}，无法创建或更新工单"
+                    return Response(data=return_data, status=status.HTTP_404_NOT_FOUND)
 
                 # 使用升级标题（唯一值）查询数据库是否已存在升级工单
                 current_summary = cicdflow_ser_data.get('summary')
@@ -180,21 +192,24 @@ class CICDFlowView(APIView):
                     update_result = jira_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
                     if not update_result['status']:
                         return_data['status'] = False
-                        return_data['msg'] = update_result['data']
+                        # jira 更新异常返回 JIRAError 类，需要转换为字符串
+                        return_data['msg'] = update_result['data'].text
                         d_logger.warning(return_data)
                     return Response(data=return_data, status=status.HTTP_200_OK)
                 # 不存在工单，新建 Jira 工单触发 issue_updated 事件
                 else:
-                    c_result = jira_obj.issue_create(args=cicdflow_ser_data)
+                    create_result = jira_obj.issue_create(args=cicdflow_ser_data)
                     # 新建工单失败，返回错误信息
-                    if not c_result['status']:
-                        return_data['msg'] = c_result['data']
+                    if not create_result['status']:
+                        # jira 创建异常返回 JIRAError 类，需要转换为字符串
+                        return_data['msg'] = create_result['data'].text
                         d_logger.warning(return_data)
-                        return Response(data=return_data, status=status.HTTP_406_NOT_ACCEPTABLE)
-                    jira_issue_obj = JiraWorkflow.objects.get(summary=current_summary)
+                        return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    jira_issue_key=create_result['data'].key
+                    # jira_issue_obj = JiraWorkflow.objects.get(summary=current_summary)
                     return_data['status'] = True
                     return_data['msg'] = '首次发包升级创建 Jira 工单成功，开始自动升级流程。'
-                    return_data['jira_issue_key'] = jira_issue_obj.issue_key
+                    return_data['jira_issue_key'] = jira_issue_key
                     d_logger.info(return_data)
                     return Response(data=return_data, status=status.HTTP_201_CREATED)
             return_data['msg'] = f"升级数据合法性未通过或提交到Jira失败，需检查请求 body 内容. 错误信息：{cicdflow_ser.errors}"

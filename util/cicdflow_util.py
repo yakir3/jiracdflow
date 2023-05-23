@@ -61,6 +61,11 @@ def get_sql_commit_data(
     # 通过 svn 信息获取每个sql 文件与内容，根据内容提交sql工单
     svn_obj = SvnClient(svn_path)
     sql_content_value = svn_obj.get_file_content(revision=svn_version, filename=svn_file)
+
+    # 增加审核功能，sql_content_value 工单内容不允许 create 语句设置 timestamp 属性，需要为 timestamp(0)
+    audit_timestamp = re.findall(' timestamp[,\s]', sql_content_value)
+    assert not audit_timestamp, "工单内容存在 timestamp 属性定义，不提交工单，检查 sql 内容。"
+
     # 提交 sql 序号，顺序执行 sql
     seq_index = current_sql_info.index(sql_data) + 1
     # DB 所属资源组名称：A18 ｜ A19 ｜ QC
@@ -86,22 +91,27 @@ def get_sql_commit_data(
         bk_commit_data = None
     elif 'QC' in svn_path_up:
         qc_ins_dict = {
-            'rex_merchant': 'qc-merchant',
+            'rex_merchant_qc': 'qc-merchant',
             'rex_admin': 'qc-admin',
-            'rex_rpt': 'qc-report'
+            'rex_rpt': 'qc-report',
+            'rex_merchant_b01': 'b01_merchant',
+            'rex_merchant_rs8': 'rs8_merchant'
         }
         sql_resource_name = re.split(r'[/_]\s*', svn_path_up)[2]
         qc_ins_key = svn_path.split('/')[-1]
         sql_instance_name = qc_ins_dict[qc_ins_key]
 
-        # 实际的 pg 数据库名称
-        qc_db_dict = {
-            'rex_merchant': 'bwup01',
-            'rex_admin': 'bwup02',
-            'rex_rpt': 'bwup03'
-        }
-        table_catalog = qc_db_dict[qc_ins_key]
-        bk_sql_content_value = get_backup_commit_data(table_catalog, sql_content_value)
+        # # 实际的 pg 数据库名称
+        # qc_db_dict = {
+        #     'rex_merchant_qc': 'bwup01',
+        #     'rex_admin': 'bwup02',
+        #     'rex_rpt': 'bwup03',
+        #     'rex_merchant_b01': 'bwup04',
+        #     'rex_merchant_rs8': 'bwup04'
+        # }
+        # table_catalog = qc_db_dict[qc_ins_key]
+        # bk_sql_content_value = get_backup_commit_data(table_catalog, sql_content_value)
+        bk_sql_content_value = get_backup_commit_data(sql_instance_name, sql_content_value)
         bk_commit_data = {
             'sql_index': int(seq_index),
             'sql_release_info': str(svn_version),
@@ -122,7 +132,7 @@ def get_sql_commit_data(
     }
     return commit_data, bk_commit_data
 
-def get_backup_commit_data(table_catalog: str, sql_content_value: str) -> Union[None, str]:
+def get_backup_commit_data(sql_instance_name: str, sql_content_value: str) -> Union[None, str]:
     try:
         # 解析原始的 dml sql，如果存在 delete update 语句则获取 delete update 语句
         sql_list = re.split(r";\s*$", sql_content_value, flags=re.MULTILINE)
@@ -138,9 +148,9 @@ def get_backup_commit_data(table_catalog: str, sql_content_value: str) -> Union[
             if not r_matches:
                 continue
             # 初始化 pg 类，获取是否存在备份表
-            pg_obj = PostgresClient(table_catalog)
+            pg_obj = PostgresClient(sql_instance_name)
             # 获取备份表名，同一工单同个表多个备份
-            bk_table_name_list = pg_obj.select_bk_table(table_catalog=table_catalog, table_name=r_matches.group(1))
+            bk_table_name_list = pg_obj.select_bk_table(table_name=r_matches.group(1))
             if not bk_table_flag:
                 bk_table_flag = bk_table_name_list
                 bk_table_name = '_'.join(bk_table_name_list)
@@ -175,7 +185,7 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
     cmdb_obj = CmdbAPI()
 
     # 延迟升级，等待 harbor 镜像同步到 gcp
-    if len(wait_upgrade_list) < 5:
+    if len(wait_upgrade_list) <= 3:
         sleep(60)
     else:
         sleep(90)
@@ -190,26 +200,37 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
         # 获取升级结果列表，根据列表状态返回升级结果
         upgrade_results = [future.result() for future in futures]
         for upgrade_result in upgrade_results:
-            urcd = upgrade_result['code_data']
+            code_data_info = upgrade_result['code_data']
             upgr_p = upgrade_result['data'][0]['project']
-            # urcd.pop('env')
+            # code_data_info.pop('env')
+            fail_msg = f"svn路径 {code_data_info['svn_path']} 对应工程升级失败，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}，错误原因：{upgrade_result['msg']}"
+            success_msg = f"svn路径 {code_data_info['svn_path']} 对应工程升级成功，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}"
             if upgrade_result['status']:
-                upgrade_success_list.append(urcd)
+                upgrade_success_list.append(code_data_info)
                 if upgr_p:
                     # prod 工程不做升级
                     if upgr_p == "no_project":
                         print(f"{upgrade_result['msg']}")
                     else:
-                        upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:35s} 升级版本: {urcd['svn_version']}")
-                        print(
-                            f"svn路径 {urcd['svn_path']} 对应工程升级成功，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}")
+                        upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:35s} 升级版本: {code_data_info['svn_version']}")
+                        print(success_msg)
                 # 没有升级工程，只有 SQL 或配置升级
                 else:
                     upgrade_info_list.append(None)
                     print(f"{upgrade_result['msg']}")
             else:
-                print(
-                    f"svn路径 {urcd['svn_path']} 对应工程升级失败，升级版本：{urcd['svn_version']}，升级tag：{urcd['tag']}，错误原因：{upgrade_result['msg']}")
+                retry_flag = 0
+                # 代码升级失败重试机制，等待10s重试2次升级
+                while retry_flag < 2:
+                    print(fail_msg)
+                    sleep(10)
+                    retry_result = cmdb_obj.upgrade(**code_data_info)
+                    if retry_result['status']:
+                        upgrade_success_list.append(code_data_info)
+                        upgrade_info_list.append(f"{retry_result['data'][0]['project']:35s} 升级版本: {code_data_info['svn_version']}")
+                        print(success_msg)
+                        break
+                    retry_flag += 1
         return upgrade_success_list, upgrade_info_list
 
 # 自定义定长字典类
@@ -251,6 +272,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
             current_summary = current_issue_data['summary']
             current_sql_info = current_issue_data['sql_info']
             serializer.save()
+            # new_jira_issue = serializer.save()
+            # bool(new_jira_issue)
             # 判断是否有 SQL 升级数据：触发进入下一步流程
             if not current_sql_info:
                 self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单无SQL升级数据，触发转换 <无SQL升级/已升级> 到状态 <CONFIG执行中>"
@@ -576,14 +599,14 @@ class JiraEventWebhookAPI(JiraWebhookData):
         return self._webhook_return_data
 
     def updated_event_code_inprogress(self, last_issue_obj: Any, current_issue_data: Dict):
-        try:
-            last_code_info = last_issue_obj.code_info
-            code_init_flag = last_issue_obj.init_flag['code_init_flag']
-            current_issue_key = current_issue_data['issue_key']
-            current_code_info = current_issue_data['code_info']
-            current_summary = current_issue_data['summary']
-            # current_environment = current_issue_data['environment']
+        last_code_info = last_issue_obj.code_info
+        code_init_flag = last_issue_obj.init_flag['code_init_flag']
+        current_issue_key = current_issue_data['issue_key']
+        current_code_info = current_issue_data['code_info']
+        current_summary = current_issue_data['summary']
+        # current_environment = current_issue_data['environment']
 
+        try:
             # webhook 中 code_info 数据为空，直接触发到下一流程
             code_exists = bool(current_code_info)
             if not code_exists:
@@ -596,6 +619,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     'msg'] = f"代码升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <无代码升级/已升级> 到状态 <UAT升级完成>"
                 return self._webhook_return_data
 
+            # current_code_info 数据调整
+            for item in current_code_info:
+                if item['tag'] == 'v1' or item['tag'] == '':
+                    item['tag'] = 'v1'
             # 初始化迭代升级代码数据
             if code_init_flag:
                 # 待升级的 code_info 数据
@@ -629,7 +656,9 @@ class JiraEventWebhookAPI(JiraWebhookData):
             end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f'代码升级结束，结束时间：{end_time}')
 
+            # current_code_info 数据调整
             current_code_info = [{k: v for k, v in d.items() if k != 'env'} for d in current_code_info]
+
             # 只有全部升级成功才转换为<代码升级成功>，只要有失败的升级就转换为<代码升级失败>
             if upgrade_success_list == current_code_info or not compare_list_info(
                     upgrade_success_list,
@@ -664,4 +693,5 @@ class JiraEventWebhookAPI(JiraWebhookData):
         except Exception as err:
             self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = f"<CODE执行中> 状态 webhook 触发失败，异常原因：{err.__str__()}"
+            jira_obj.change_transition(current_issue_key, '代码升级失败')
         return self._webhook_return_data

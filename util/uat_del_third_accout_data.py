@@ -13,10 +13,10 @@ archery_obj = ArcheryAPI()
 def uat_delete_account_data(
         # 待删除用户字符串
         username_str: str = None,
+        merchant_id: str = None,
+        instance_tag: str = None,
         workflow_name: str = 'UAT_QC_删除第三方测试账号数据',
         resource_tag: str = 'QC',
-        # instance_tag: str = 'uat_pg_env'
-        instance_tag: str = 'qc-merchant'
     ) -> Union[Dict, str]:
     try:
         # 生成删除 sql 语句
@@ -27,22 +27,22 @@ def uat_delete_account_data(
 # where stu.name in ({username_str});
 # """
         delete_sql_content = f"""DELETE FROM r_customer_third_info cti
-WHERE cti.merchant_id = 'QC' and cti.customer_id IN (select rc.customer_id  from r_customer rc where rc.merchant_id = 'QC' and rc.login_name in ({username_str}));
+WHERE cti.merchant_id = '{merchant_id}' and cti.customer_id IN (select rc.customer_id  from r_customer rc where rc.merchant_id = '{merchant_id}' and rc.login_name in ({username_str}));
 
 DELETE FROM r_customer_balance rcb
-WHERE rcb.merchant_id = 'QC' and rcb.customer_id IN (select rc.customer_id  from r_customer rc where rc.merchant_id = 'QC' and rc.login_name in ({username_str}));
+WHERE rcb.merchant_id = '{merchant_id}' and rcb.customer_id IN (select rc.customer_id  from r_customer rc where rc.merchant_id = '{merchant_id}' and rc.login_name in ({username_str}));
 
 DELETE FROM r_customer_ext rce
-WHERE rce.merchant_id = 'QC' and rce.login_name IN ({username_str});
+WHERE rce.merchant_id = '{merchant_id}' and rce.login_name IN ({username_str});
 
 DELETE FROM r_customer_phone_record rcpr
-WHERE rcpr.merchant_id = 'QC' and rcpr.login_name IN ({username_str});
+WHERE rcpr.merchant_id = '{merchant_id}' and rcpr.login_name IN ({username_str});
 
 DELETE FROM r_customer_email_record rcer
-WHERE rcer.merchant_id = 'QC' and rcer.login_name IN ({username_str});
+WHERE rcer.merchant_id = '{merchant_id}' and rcer.login_name IN ({username_str});
 
 DELETE FROM r_customer rc
-WHERE rc.merchant_id = 'QC' and rc.login_name IN ({username_str});
+WHERE rc.merchant_id = '{merchant_id}' and rc.login_name IN ({username_str});
 """
         # 提交工单
         commit_data = {
@@ -93,10 +93,27 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("未输入 users 参数，请确认！！！")
         sys.exit(111)
+    if len(sys.argv) < 3:
+        print("未输入产品参数，请确认！！！")
+        sys.exit(111)
+    # 获取删除的用户和产品参数
     jenkins_user_parameter = sys.argv[1]
+    merchant_id_parameter = sys.argv[2]
+    # 判断用户参数条件，符合要求生成用户字符串，已逗号分隔
     if not jenkins_user_parameter:
         print('users 参数不允许为空或 None，请确认！！！')
+        sys.exit(111)
     user_str = ", ".join("'" + item + "'" for item in jenkins_user_parameter.split(','))
+    # 判断产品是否在已有产品内，符合要求传入 merchant_id
+    merchant_id_dict = {
+        'QC': 'qc-merchant',
+        'B01': 'b01_merchant',
+        'RS8': 'rs8_merchant'
+    }
+    if merchant_id_parameter not in merchant_id_dict.keys():
+        print('product 参数不在当前已有的产品列表中，请确认！！！')
+        sys.exit(111)
+    instance_tag = merchant_id_dict[merchant_id_parameter]
     # 处理逻辑函数
-    res = uat_delete_account_data(user_str)
+    res = uat_delete_account_data(user_str, merchant_id_parameter, instance_tag=instance_tag)
     print(res)
