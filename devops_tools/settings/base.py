@@ -154,12 +154,14 @@ LOGGING = {
         # 默认 INFO 级别日志
         'default': {
             'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',     # 保存到文件，自动切
-            'filename': BASE_LOG_DIR.joinpath('app.log'),        # 日志文件位置
-            'maxBytes': 1024 * 1024 * 50,                        # 日志大小 50M
-            'backupCount': 3,                                    # 日志备份数量
-            'formatter': 'standard',                             # 使用哪种日志格式
-            'encoding': 'utf-8',                                 # 保存的格式
+            'class': 'logging.handlers.TimedRotatingFileHandler',  # 保存到文件，按时间切割
+            'filename': BASE_LOG_DIR.joinpath('app.log'),          # 日志文件位置
+            'when': 'W0',                                          # 按时间切割日志：每周日凌晨0点切割
+            # 'when': 'midnight',                                    # 按时间切割日志：每天凌晨0点切割
+            'interval': 1,                                         # 切割日志时间间隔
+            'backupCount': 3,                                      # 日志备份数量
+            'formatter': 'standard',                               # 使用哪种日志格式
+            'encoding': 'utf-8',                                   # 保存的格式
         },
         # 错误级别日志
         'error': {

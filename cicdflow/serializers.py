@@ -1,3 +1,5 @@
+from abc import ABC
+
 from rest_framework import serializers
 from .models import CICDFlow, CICDState, JiraWorkflow, SqlWorkflow
 
@@ -9,10 +11,10 @@ class CICDFlowSerializer(serializers.Serializer):
     env = serializers.CharField(max_length=16)
     function_list = serializers.JSONField()
     upgrade_type = serializers.CharField(max_length=32)
-    sql_info = serializers.JSONField(allow_null=True)
-    config_info = serializers.JSONField(allow_null=True)
-    apollo_info = serializers.JSONField(allow_null=True)
-    code_info = serializers.JSONField(allow_null=True)
+    sql_info = serializers.JSONField(allow_null=False)
+    config_info = serializers.JSONField(allow_null=False)
+    apollo_info = serializers.JSONField(allow_null=False)
+    code_info = serializers.JSONField(allow_null=False)
 
 class CICDStateSerializer(serializers.ModelSerializer):
     class Meta:

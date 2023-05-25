@@ -1,4 +1,3 @@
-import requests
 from jira import JIRA
 from pprint import pprint
 from typing import Union, Dict
@@ -77,7 +76,7 @@ class JiraWebhookData(object):
         self._code_info_str = self._issue_fields.get('customfield_10103')
         self._code_info = literal_eval(self._code_info_str)
 
-    def get_issue_data(self) -> Dict:
+    def get_issue_data(self) -> Union[str, Dict]:
         try:
             self._convert_issue_data()
             self._return_data = {
@@ -100,6 +99,7 @@ class JiraWebhookData(object):
         except Exception as err:
             print(err)
             return f"webhook 数据解析出错，错误原因：{err.__str__()}"
+        # print(self._return_data)
         return self._return_data
 
 class JiraAPI(object):
@@ -193,7 +193,7 @@ class JiraAPI(object):
             return result
 
     def get_transition(self,issue_id=None):
-        if issue_id == None:
+        if issue_id is None:
             return {'status':False,'msg':'issue_id is None!','data':None}
         all_res = self.jira.transitions(self.jira.issue(id=issue_id))
         result_list = []

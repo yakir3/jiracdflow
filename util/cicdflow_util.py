@@ -101,16 +101,7 @@ def get_sql_commit_data(
         qc_ins_key = svn_path.split('/')[-1]
         sql_instance_name = qc_ins_dict[qc_ins_key]
 
-        # # 实际的 pg 数据库名称
-        # qc_db_dict = {
-        #     'rex_merchant_qc': 'bwup01',
-        #     'rex_admin': 'bwup02',
-        #     'rex_rpt': 'bwup03',
-        #     'rex_merchant_b01': 'bwup04',
-        #     'rex_merchant_rs8': 'bwup04'
-        # }
-        # table_catalog = qc_db_dict[qc_ins_key]
-        # bk_sql_content_value = get_backup_commit_data(table_catalog, sql_content_value)
+        # 备份库 SQL 信息获取
         bk_sql_content_value = get_backup_commit_data(sql_instance_name, sql_content_value)
         bk_commit_data = {
             'sql_index': int(seq_index),
@@ -189,7 +180,7 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
         sleep(60)
     else:
         sleep(90)
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=15) as executor:
         futures = []
         # 循环待升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
         for code_data in wait_upgrade_list:
@@ -219,6 +210,7 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
                     upgrade_info_list.append(None)
                     print(f"{upgrade_result['msg']}")
             else:
+                print(fail_msg)
                 retry_flag = 0
                 # 代码升级失败重试机制，等待10s重试2次升级
                 while retry_flag < 2:
@@ -272,8 +264,6 @@ class JiraEventWebhookAPI(JiraWebhookData):
             current_summary = current_issue_data['summary']
             current_sql_info = current_issue_data['sql_info']
             serializer.save()
-            # new_jira_issue = serializer.save()
-            # bool(new_jira_issue)
             # 判断是否有 SQL 升级数据：触发进入下一步流程
             if not current_sql_info:
                 self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单无SQL升级数据，触发转换 <无SQL升级/已升级> 到状态 <CONFIG执行中>"
@@ -420,6 +410,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             bk_sql_workflow_list = filtered_queryset(bk_sql_workflow_obj)
             assert bk_sql_workflow_list, "备份工单为空，无需备份"
             for bk_sql_data in bk_sql_workflow_list:
+                # bk_sql_workflow_ins = sql_workflow_obj.get(**bk_sql_data)
                 w_id = bk_sql_data['w_id']
                 audit_result = archery_obj.audit_workflow(workflow_id=w_id)
                 if not audit_result['status']:
@@ -427,6 +418,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 execute_result = archery_obj.execute_workflow(workflow_id=w_id)
                 if not execute_result['status']:
                     print(execute_result)
+                # bk_sql_workflow_ins.w_status = 'workflow_finish'
+                # bk_sql_workflow_ins.save()
         except Exception as err:
             print(f'备份工单审核/执行异常，异常原因：{err.__str__()}')
 
@@ -551,6 +544,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # webhook 中 apollo_info / config_info 数据为空，直接触发到下一流程
             apollo_exists = bool(current_apollo_info)
             config_exists = bool(current_config_info)
+            if len(current_apollo_info) > 0 or len(current_config_info) > 0:
+                apollo_exists = bool(current_apollo_info[0])
+                config_exists = bool(current_config_info[0])
+
             if not apollo_exists and not config_exists:
                 last_issue_obj.status = 'CODE执行中'
                 last_issue_obj.init_flag['apollo_init_flag'] += 1
