@@ -194,8 +194,8 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
             code_data_info = upgrade_result['code_data']
             upgr_p = upgrade_result['data'][0]['project']
             # code_data_info.pop('env')
-            fail_msg = f"svn路径 {code_data_info['svn_path']} 对应工程升级失败，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}，错误原因：{upgrade_result['msg']}"
-            success_msg = f"svn路径 {code_data_info['svn_path']} 对应工程升级成功，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}"
+            fail_msg = f"svn 路径 {code_data_info['svn_path']} 对应工程升级失败，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}，错误原因：{upgrade_result['msg']}"
+            success_msg = f"svn 路径 {code_data_info['svn_path']} 对应工程升级成功，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}"
             if upgrade_result['status']:
                 upgrade_success_list.append(code_data_info)
                 if upgr_p:

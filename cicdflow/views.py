@@ -184,8 +184,13 @@ class CICDFlowView(APIView):
                         return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行>，重新提交 SQL 触发完整升级流程"
                         return_data['jira_issue_key'] = issue_key
                         d_logger.info(return_data)
+                    # elif issue_status == '开发/运维修改':
+                    #     return_data['status'] = True
+                    #     return_data['msg'] = f"工单：{current_summary} 状态为 <开发/运维修改>，开始完整迭代升级流程"
+                    #     return_data['jira_issue_key'] = issue_key
+                    #     d_logger.info(return_data)
                     else:
-                        return_data['msg'] = '当前工单 issue 状态非 <SQL待执行> 或 <UAT升级完成>，不允许开始升级流程，检查当前工单状态'
+                        return_data['msg'] = '当前工单 issue 状态非 <SQL待执行> 或 <UAT升级完成> 或 <开发/运维修改> ，不允许开始升级流程，检查当前工单状态'
                         d_logger.warning(return_data)
                         return Response(data=return_data, status=status.HTTP_200_OK)
                     # 更新 Jira 工单，失败时抛出异常

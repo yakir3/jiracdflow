@@ -109,7 +109,7 @@ class CmdbAPI:
 
         # svn 路径结尾 prod，不升级代码，直接返回成功
         if svn_path.endswith('prod') and env == 'UAT':
-            return {'status': True, 'msg': '运营环境 svn 路径，不升级代码', 'data': [{'project': "no_project"}], 'code_data': code_data}
+            return {'status': True, 'msg': f"svn 路径{svn_path} 为运营环境 svn 路径，不升级代码", 'data': [{'project': "no_project"}], 'code_data': code_data}
 
         # 版本号为空字符串时，不升级代码（只升级 SQL 或配置）
         if not svn_version:
