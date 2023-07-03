@@ -18,6 +18,115 @@ d_logger = logging.getLogger('default_logger')
 # 接收自动发包系统请求，创建或迭代更新 Jira 升级工单
 class CICDFlowView(APIView):
     @swagger_auto_schema(
+        operation_summary="查询升级状态",
+        operation_description="工单名或 sql_id 查询升级状态",
+        # request_body=openapi.Schema(
+        #   type=openapi.TYPE_STRING,
+        # ),
+        manual_parameters=[
+            openapi.Parameter('summary', openapi.IN_QUERY, description='升级工单名称', type=openapi.TYPE_STRING),
+            openapi.Parameter('sql_id', openapi.IN_QUERY, description='单个 sql 文件唯一 id', type=openapi.TYPE_STRING, required=False)
+        ],
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'code': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='接口返回代码'),
+                    'msg': openapi.Schema(type=openapi.TYPE_STRING, description='返回消息'),
+                    'data': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'summary': openapi.Schema(type=openapi.TYPE_STRING, description='升级工单名称'),
+                            'upgrade_status': openapi.Schema(type=openapi.TYPE_INTEGER, description='升级工单状态代码'),
+                            'sql_info': openapi.Schema(
+                                type=openapi.TYPE_ARRAY,
+                                description='SQL 升级信息',
+                                items=openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'sql_id': openapi.Schema(type=openapi.TYPE_STRING, description='sql_id, 唯一值'),
+                                        'status': openapi.Schema(type=openapi.TYPE_STRING, description='单条 SQL 工单当前状态',)
+                                    }
+                                )
+                            )
+                        },
+                        description='返回数据'),
+                }
+            ),
+            400: 'Bad Request'
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        return_data = {'code': 10200, 'msg': 'success', 'data': {}}
+        try:
+            summary = request.GET.get('summary')
+            sql_id = request.GET.get('sql_id')
+            assert summary, "参数必选项 summary 参数缺失，工单编号名称为必需值"
+
+            # 根据查询参数，查询 jira_workflow、sql_workflow 表
+            jira_obj = JiraWorkflow.objects.get(summary=summary)
+
+            # 查询返回的 sql_info 数据
+            upgrade_status_map = {
+                'UAT升级完成': 100,
+                'SQL待执行': 101,
+                'SQL执行中': 102,
+                'SQL执行失败': 150
+            }
+            sql_info_data = {
+                'summary': jira_obj.summary,
+                'upgrade_status': upgrade_status_map.get(jira_obj.status, jira_obj.status),
+                'sql_info': list()
+            }
+            # 存在 sql_id 查询参数时，只返回具体某个 sql 文件的执行结果
+            if sql_id:
+                sql_workflow_obj = SqlWorkflow.objects.get(sql_id=sql_id)
+                tmp_dict = dict()
+                tmp_dict['sql_id'] = sql_id
+                tmp_dict['status'] = sql_workflow_obj.w_status
+                tmp_dict['errormessage'] = ''
+                sql_info_data['sql_info'].append(tmp_dict)
+            else:
+                sql_workflow_obj = SqlWorkflow.objects.filter(workflow_name=summary)
+                # sql_index 与 workflow_name 相同时，取 sql_release_info 版本较大的值返回
+                from util.cicdflow_util import filtered_queryset
+                from util.archery_api import ArcheryAPI
+                filter_sql_workflow_list = filtered_queryset(sql_workflow_obj)
+                archery_obj = ArcheryAPI()
+
+                for sql_item in filter_sql_workflow_list:
+                    w_id = sql_item.get('w_id')
+                    sql_id = sql_item.get('sql_id')
+                    w_status = sql_item.get('w_status')
+                    # sql_info 工单存在 exception 状态时，从 archery_api 接口获取 errormessage
+                    if w_status == 'workflow_exception':
+                        select_result = archery_obj.get_workflows(args={'id': w_id})
+                        errormessage = select_result['data'][0]['execute_result'][0]['errormessage']
+                    else:
+                        errormessage = ''
+                    # 循环写入所有 sql 工单信息到 sql_info 列表中
+                    tmp_dict = dict()
+                    tmp_dict['sql_id'] = sql_id
+                    tmp_dict['status'] = w_status
+                    tmp_dict['errormessage'] = errormessage
+                    sql_info_data['sql_info'].append(tmp_dict)
+
+            return_data['data'] = sql_info_data
+        except AssertionError as err:
+            return_data['code'] = 10500
+            return_data['msg'] = 'failed'
+            return_data['data'] = {"error": f"{err.__str__()}"}
+        except (JiraWorkflow.DoesNotExist, SqlWorkflow.DoesNotExist) as err:
+            return_data['code'] = 10404
+            return_data['msg'] = 'failed'
+            return_data['data'] = {"error": f"工单名或 sql_id 查询数据不存在，错误内容：{err.__str__()}"}
+        except Exception as err:
+            return_data['code'] = 10500
+            return_data['msg'] = 'failed'
+            return_data['data'] = {"error": f"接口异常，异常原因： {err.__str__()}"}
+        return Response(data=return_data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
         operation_summary="触发Jira升级工单流程",
         operation_description="",
         request_body=openapi.Schema(
@@ -31,7 +140,7 @@ class CICDFlowView(APIView):
                 'summary': openapi.Schema(
                     type=openapi.TYPE_STRING,
                     description='升级标题，不同升级标题需要为唯一值不要重复',
-                    default='【A19】【升级】20230101_01'
+                    default='【XX】【升级】20230101_01'
                 ),
                 'issue_type': openapi.Schema(
                     type=openapi.TYPE_STRING,
@@ -47,7 +156,7 @@ class CICDFlowView(APIView):
                     type=openapi.TYPE_ARRAY,
                     items=openapi.Schema(type=openapi.TYPE_STRING),
                     description='功能列表',
-                    default=["A18-1111 【A19】数据导出xxxx", "A18-2222 【A19】报表中心数据优化"]
+                    default=["【XXX】数据导出xxxx", "【XXX】报表中心数据优化"]
                 ),
                 'upgrade_type': openapi.Schema(
                     type=openapi.TYPE_STRING,
@@ -60,9 +169,9 @@ class CICDFlowView(APIView):
                         type=openapi.TYPE_OBJECT,
                         properties={
                             'svn_path': openapi.Schema(type=openapi.TYPE_STRING, description='svn路径',
-                                                       default='database_acc/db_a18/xxx'),
+                                                       default='database_xxx/xxx'),
                             'svn_file': openapi.Schema(type=openapi.TYPE_STRING, description='svn文件名',
-                                                       default='05.a18_kratos_act_ddl_xxx.sql'),
+                                                       default='05.act_ddl_xxx.sql'),
                             'svn_version': openapi.Schema(type=openapi.TYPE_STRING, description='svn版本',
                                                           default='999')
                         }
@@ -164,13 +273,10 @@ class CICDFlowView(APIView):
                     issue_status = jira_issue_obj.status
                     # 判断 issue 状态是否为 <SQL待执行> 或 <UAT升级完成>，非此状态抛出异常，不允许更新 issue 数据
                     if issue_status == 'UAT升级完成':
-                        d_logger.debug(f"工单：{current_summary} 状态为 <SQL待执行> 或 <UAT升级完成>，正常流转流程")
-                        c1_result = jira_obj.change_transition(issue_key, 'UAT自动迭代升级')
-                        # c2_result = jira_obj.change_transition(issue_key, '触发提交SQL')
-                        # if not c1_result['status'] and not c2_result['status']:
-                        #     return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{c1_result['data']} <---> {c2_result['data']}"
-                        if not c1_result['status']:
-                            return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{c1_result['data']}"
+                        d_logger.debug(f"工单：{current_summary} 状态为 <UAT升级完成>，正常流转流程")
+                        trans_result = jira_obj.change_transition(issue_key, 'UAT自动迭代升级')
+                        if not trans_result['status']:
+                            return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{trans_result['data']}"
                             d_logger.warning(return_data)
                         # 从 <UAT升级完成> 状态变更，开始迭代升级
                         else:
@@ -178,11 +284,17 @@ class CICDFlowView(APIView):
                             return_data['msg'] = '已存在 Jira 工单，转换工单状态到<UAT自动迭代升级>，开始完整迭代升级流程。'
                             return_data['jira_issue_key'] = issue_key
                             d_logger.info(return_data)
-                    # SQL待执行 状态会自动触发 webhook，无需人为调用 change_transition 方法变更状态
-                    elif issue_status == 'SQL待执行':
+                    # SQL待执行 状态数据有变化时会自动触发 webhook，无需人为调用 change_transition 方法变更状态
+                    elif issue_status == 'SQL待执行' or issue_status == 'SQL执行失败':
                         return_data['status'] = True
-                        return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行>，重新提交 SQL 触发完整升级流程"
+                        return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行> 或 <SQL执行失败>，重新提交 SQL 触发完整升级流程"
                         return_data['jira_issue_key'] = issue_key
+                        # # 无数据变化时，强制触发 jira 的状态变化
+                        # try:
+                        #     sleep(3)
+                        #     jira_obj.change_transition(issue_key, '触发提交SQL')
+                        # except Exception as err:
+                        #     print(err.__str__())
                         d_logger.info(return_data)
                     # elif issue_status == '开发/运维修改':
                     #     return_data['status'] = True
@@ -230,7 +342,6 @@ class CICDFlowView(APIView):
             return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err.__str__()}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 # Jira 升级自动化流程
 class JiraFlowView(APIView):
@@ -290,7 +401,8 @@ class JiraFlowView(APIView):
                         webhook_result = jira_event_webhook_obj.updated_event_sql_waiting(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jiraworkflow_ser_data,
-                            sqlworkflow_ser=SqlWorkflowSerializer
+                            sqlworkflow_ser=SqlWorkflowSerializer,
+                            sql_workflow_ins=SqlWorkflow
                         )
                     # SQL执行中 状态，可转变状态：SQL升级成功 ｜ SQL升级失败
                     case 'SQL执行中':
