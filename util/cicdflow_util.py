@@ -184,7 +184,9 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
 
     # 延迟升级，等待 harbor 镜像同步到 gcp
     if len(wait_upgrade_list) <= 3:
-        sleep(60)
+        sleep(30)
+    elif 3 < len(wait_upgrade_list) <= 6:
+        sleep(75)
     else:
         sleep(90)
     with ThreadPoolExecutor(max_workers=15) as executor:
@@ -291,14 +293,15 @@ class JiraEventWebhookAPI(JiraWebhookData):
         """
         try:
             # last_sql_info = last_issue_obj.sql_info
-            # 是否为初始化首次升级标志，非0为迭代升级
-            # sql_init_flag = last_issue_obj.init_flag['sql_init_flag']
             current_issue_key = current_issue_data['issue_key']
             current_sql_info = current_issue_data['sql_info']
             # 过滤掉只在运营执行的 SQL
             current_sql_info = [item for item in current_sql_info if '运营' not in item['svn_file']]
             current_summary = current_issue_data['summary']
             # current_project = current_issue_data['project']
+
+            # 实例化 archery 对象，调用 commit_workflow 方法提交sql审核执行
+            archery_obj = ArcheryAPI()
 
             # 从<SQL执行中>状态转换来的 webhook 只更新数据不做操作
             if self.webhook_from == "SQL执行中":
@@ -319,14 +322,23 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     'msg'] = f"SQL 升级数据为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG执行中>"
                 return self._webhook_return_data
 
-            # 实例化 archery 对象，调用 commit_workflow 方法提交sql审核执行
-            archery_obj = ArcheryAPI()
+            # Jira 的 sql_info 数据中对比当前所有需要提交 SQL 工单是否已全部存入 SqlWorkflow 表中
+            commit_sql_list = [item for item in current_sql_info if not item['has_deploy_uat']]
+            # webhook 中 sql_info 数据所有 has_deploy_uat 字段值都为 True, 直接触发到下一流程
+            if not commit_sql_list:
+                last_issue_obj.status = 'CONFIG执行中'
+                last_issue_obj.init_flag['sql_init_flag'] += 1
+                last_issue_obj.save()
+                jira_obj.change_transition(current_issue_key, '无SQL升级/已升级')
+                self._webhook_return_data[
+                    'msg'] = f"SQL 升级已在 UAT 环境执行，无需重复执行。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG执行中>"
+                return self._webhook_return_data
 
             # 轮循当前 sql_info 数据，根据 has_deploy_uat 值判断是否需要提交 SQL
             for sql_data in current_sql_info:
                 svn_version = sql_data['svn_version']
                 svn_file = sql_data['svn_file']
-                sql_id = sql_data.get('sql_id', 0)
+                sql_id = sql_data.get('sql_id')
 
                 # 获取提交 Archery SQL 工单数据
                 commit_data, bk_commit_data = get_sql_commit_data(sql_data, current_sql_info, current_summary)
@@ -335,14 +347,13 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 if bk_commit_data:
                     bk_sql_workflow_obj = sql_workflow_ins.objects.filter(
                         workflow_name=current_summary,
-                        sql_release_info=commit_data['sql_release_info'],
-                        sql_index=commit_data['sql_index']
+                        sql_id=sql_id,
                     ).filter(Q(w_status='workflow_manreviewing')| Q(w_status='workflow_review_pass') | Q(w_status='workflow_finish'))
                     if not bk_sql_workflow_obj:
                         try:
                             upgrade_bk_result = archery_obj.commit_workflow(bk_commit_data)
                             bk_name = bk_commit_data.get('workflow_name')
-                            assert upgrade_bk_result['status'], f"备份工单 {bk_name}提交失败"
+                            assert upgrade_bk_result['status'], f"备份工单 {bk_name} 提交失败"
                             upgrade_bk_result['data']['sql_id'] = sql_id
                             sql_ser = sqlworkflow_ser(data=upgrade_bk_result['data'])
                             sql_ser.is_valid(raise_exception=True)
@@ -354,15 +365,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 # 判断本次 SQL 升级是否需要提交升级工单
                 if commit_data:
                     # 先查询 SqlWorkflow 表是否已存在 SQL，如已存在则已提交过，不重复提交。
-                    # sql_workflow_obj = sql_workflow_ins.objects.filter(
-                    #     workflow_name=current_summary,
-                    #     sql_release_info=commit_data['sql_release_info'],
-                    #     sql_index=commit_data['sql_index']
-                    # ).filter(Q(w_status='workflow_manreviewing')| Q(w_status='workflow_review_pass') | Q(w_status='workflow_finish'))
                     sql_workflow_obj = sql_workflow_ins.objects.filter(
                         workflow_name=current_summary,
                         sql_id=sql_id,
-                        sql_index=commit_data['sql_index']
+                        # sql_index=commit_data['sql_index']
                     ).filter(Q(w_status='workflow_manreviewing')| Q(w_status='workflow_review_pass') | Q(w_status='workflow_finish'))
                     if not sql_workflow_obj:
                         # 调用 archery_api commit 方法提交 SQL
@@ -379,30 +385,11 @@ class JiraEventWebhookAPI(JiraWebhookData):
                             print(f"SQL：{svn_file} 提交失败，提交版本：{svn_version}，对应工单：{current_issue_key}，错误原因：{commit_result['msg']}")
 
             # 只有全部 SQL 提交成功才转换为 <SQL执行中>，只要有 SQL 提交失败不转换状态
-            # Jira 的 sql_info 数据中  对比当前所有需要提交 SQL 工单是否已全部存入 SqlWorkflow 表中
-            commit_sql_list = [item for item in current_sql_info if not item['has_deploy_uat']]
-            # webhook 中 sql_info 数据所有 has_deploy_uat 字段值都为 True, 直接触发到下一流程
-            if not commit_sql_list:
-                last_issue_obj.status = 'CONFIG执行中'
-                last_issue_obj.init_flag['sql_init_flag'] += 1
-                last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, '无SQL升级/已升级')
-                self._webhook_return_data[
-                    'msg'] = f"SQL 升级已在 UAT 环境执行，无需重复执行。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG执行中>"
-                return self._webhook_return_data
-
-            # SqlWorkflow 表中已存在的升级 SQL
             commit_success_list = []
             for sql_item in commit_sql_list:
-                # sql_workflow_obj = sql_workflow_ins.objects.filter(
-                #     workflow_name=current_summary,
-                #     sql_release_info=sql_item['svn_version'],
-                #     sql_index=current_sql_info.index(sql_item) + 1
-                # ).filter(Q(w_status='workflow_manreviewing')| Q(w_status='workflow_review_pass') | Q(w_status='workflow_finish'))
                 sql_workflow_obj = sql_workflow_ins.objects.filter(
                     workflow_name=current_summary,
-                    sql_id=sql_item['sql_id'],
-                    sql_index=current_sql_info.index(sql_item) + 1
+                    sql_id=sql_item['sql_id']
                 ).filter(Q(w_status='workflow_manreviewing') | Q(w_status='workflow_review_pass') | Q(
                     w_status='workflow_finish'))
                 if sql_workflow_obj:
@@ -430,7 +417,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
         <SQL执行中> 状态，按升级序号顺序 审核+执行 SQL 工单，出现异常则中断执行
         """
         current_issue_key = current_issue_data['issue_key']
-        # current_sql_info = current_issue_data['sql_info']
+        current_sql_info = current_issue_data['sql_info']
         current_summary = current_issue_data['summary']
         current_code_info = current_issue_data['code_info']
 
@@ -444,18 +431,17 @@ class JiraEventWebhookAPI(JiraWebhookData):
         )
         # 判断是否存在需要备份工单，先执行备份工单再执行后续 SQL
         if bk_sql_workflow_obj:
-            bk_sql_workflow_list = filtered_queryset(bk_sql_workflow_obj)
-            for bk_sql_data in bk_sql_workflow_list:
+            bk_sql_list = [row for row in bk_sql_workflow_obj.values('w_id')]
+            for bk_sql_wid in bk_sql_list:
                 try:
-                    w_id = bk_sql_data['w_id']
                     # 审核备份工单
-                    audit_result = archery_obj.audit_workflow(workflow_id=w_id)
-                    assert audit_result['status'], "工单 {} 审核失败，错误原因 {}".format(w_id, audit_result)
+                    audit_result = archery_obj.audit_workflow(workflow_id=bk_sql_wid)
+                    assert audit_result['status'], "工单 {} 审核失败，错误原因 {}".format(bk_sql_wid, audit_result)
                     # 执行备份工单
-                    execute_result = archery_obj.execute_workflow(workflow_id=w_id)
-                    assert execute_result['status'], "工单 {} 执行失败，错误原因 {}".format(w_id, execute_result)
+                    execute_result = archery_obj.execute_workflow(workflow_id=bk_sql_wid)
+                    assert execute_result['status'], "工单 {} 执行失败，错误原因 {}".format(bk_sql_wid, execute_result)
                     # 审核+执行成功，修改工单状态，保存到 SqlWorkflow 表
-                    bk_sql_workflow_ins = bk_sql_workflow_obj.get(w_id=w_id)
+                    bk_sql_workflow_ins = bk_sql_workflow_obj.get(w_id=bk_sql_wid)
                     bk_sql_workflow_ins.w_status = 'workflow_finish'
                     bk_sql_workflow_ins.save()
                 except AssertionError as err:
@@ -474,20 +460,25 @@ class JiraEventWebhookAPI(JiraWebhookData):
             start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f'开始执行 SQL，开始时间：{start_time}')
 
-            # 获取 SqlWorkflow 表中所有待审核状态的 SQL 工单
+            # 获取 SqlWorkflow 表中所有待审核状态的 SQL 工单，已 sql_index 为排序顺序
             audit_sql_obj = sql_workflow_ins.objects.filter(
                 workflow_name=current_summary,
                 w_status='workflow_manreviewing'
-            )
-            # assert audit_sql_obj, f"工单 {current_summary} 本次提交工单, 在数据库中无待审核的工单，跳过本次 SQL 审核&执行"
-            # 开始自动审核，使用 filtered_queryset 函数过滤出 sql_index workflow_name 相同时，sql_release_info 最大值的数据
-            sql_workflow_list = filtered_queryset(audit_sql_obj)
-            for sql_workflow_data in sql_workflow_list:
+            ).order_by('sql_index')
+            # 开始自动审核
+            audit_sql_list = [row for row in audit_sql_obj.values(
+                'w_id',
+                'workflow_name',
+                'w_status',
+                'sql_index',
+                'sql_release_info',
+                'sql_id')]
+            for audit_sql_data in audit_sql_list:
                 # SQL 工单 ID，通过唯一 ID 查询结果
-                w_id = sql_workflow_data['w_id']
+                w_id = audit_sql_data['w_id']
                 select_result = archery_obj.get_workflows(args={'id': w_id})
                 sql_workflow_status = select_result['data'][0]['status']
-                audit_ins = audit_sql_obj.get(**sql_workflow_data)
+                audit_ins = audit_sql_obj.get(**audit_sql_data)
                 # 工单为待审核状态时，调用 archery_api 方法审核通过工单
                 if sql_workflow_status == 'workflow_manreviewing':
                     audit_result = archery_obj.audit_workflow(workflow_id=w_id)
@@ -503,10 +494,6 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 # 保存状态到 sql_workflow 表
                 audit_ins.save()
             # 自动审核结束，确认是否还存在 workflow_manreviewing 状态工单
-            # after_audit_filtered_list = filtered_queryset(audit_sql_obj)
-            # after_audit_list = [
-            #     item for item in after_audit_filtered_list if not item['w_status'] == 'workflow_review_pass'
-            # ]
             if audit_sql_obj:
                 self._webhook_return_data['status'] = False
                 self._webhook_return_data['msg'] = f"工单 {current_summary} 自动审核正常结束，但存在有非 <审核通过> 状态的工单"
@@ -514,18 +501,27 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 return self._webhook_return_data
 
             # 获取 SqlWorkflow 表中所有审核通过状态的 SQL 工单
+            sql_id_list = [item['sql_id'] for item in current_sql_info if not item['has_deploy_uat']]
             execute_sql_obj = sql_workflow_ins.objects.filter(
                 workflow_name=current_summary,
-                w_status='workflow_review_pass'
-            )
-            # 开始自动执行，使用 filtered_queryset 函数过滤出 sql_index workflow_name 相同时，sql_release_info 最大值的数据
-            execute_sql_list = filtered_queryset(execute_sql_obj)
-            for sql_workflow_data in execute_sql_list:
+                w_status='workflow_review_pass',
+                sql_id__in=sql_id_list
+            ).order_by('sql_index')
+            # 开始自动执行，根据 current_sql_info 中 sql_id 获取需要审核执行的 sql
+            execute_sql_list = [row for row in execute_sql_obj.values(
+                'w_id',
+                'workflow_name',
+                'w_status',
+                'sql_index',
+                'sql_release_info',
+                'sql_id')]
+            # 只有 sql_id 存在且 has_deploy_uat 为 False 的工单才执行
+            for execute_sql_data in execute_sql_list:
                 # SQL 工单 ID，通过唯一 ID 查询结果
-                w_id = sql_workflow_data['w_id']
-                select_result = archery_obj.get_workflows(args={'id': w_id})
-                sql_workflow_status = select_result['data'][0]['status']
-                execute_ins = execute_sql_obj.get(**sql_workflow_data)
+                w_id = execute_sql_data['w_id']
+                # select_result = archery_obj.get_workflows(args={'id': w_id})
+                # sql_workflow_status = select_result['data'][0]['status']
+                execute_ins = execute_sql_obj.get(**execute_sql_data)
 
                 # 工单为审核通过时，调用 archery_api 方法执行工单
                 execute_result = archery_obj.execute_workflow(workflow_id=w_id)
@@ -550,10 +546,6 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     break
 
             # 自动执行结束，核实是否还存在 workflow_review_pass 状态工单
-            # after_execute_filtered_list = filtered_queryset(execute_sql_obj)
-            # after_execute_list = [
-            #     item for item in after_execute_filtered_list if not item['w_status'] == 'workflow_finish'
-            # ]
             if execute_sql_obj:
                 self._webhook_return_data['status'] = False
                 self._webhook_return_data[
@@ -691,11 +683,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 # 已成功升级的 code_info 数据
                 upgrade_success_list = []
 
-            # # 实例化 cmdb 对象，调用 upgrade 方法升级代码
-            # cmdb_obj = CmdbAPI()
             # 升级成功的工程名称列表，用于发送升级答复邮件
             upgrade_info_list = []
 
+            # 升级代码主逻辑
             start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f'开始升级代码，开始时间：{start_time}')
             upgrade_success_list, upgrade_info_list = thread_upgrade_code(wait_upgrade_list, upgrade_success_list, upgrade_info_list)

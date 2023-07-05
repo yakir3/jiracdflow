@@ -57,7 +57,16 @@ class CICDFlowView(APIView):
         }
     )
     def get(self, request, *args, **kwargs):
-        return_data = {'code': 10200, 'msg': 'success', 'data': {}}
+        return_data = {
+            'code': 10200,
+            'msg': 'success',
+            'data': {
+                'summary': '',
+                'upgrade_status': '',
+                'sql_info': list(),
+                'code_info': list()
+            }
+        }
         try:
             summary = request.GET.get('summary')
             sql_id = request.GET.get('sql_id')
@@ -66,18 +75,19 @@ class CICDFlowView(APIView):
             # 根据查询参数，查询 jira_workflow、sql_workflow 表
             jira_obj = JiraWorkflow.objects.get(summary=summary)
 
-            # 查询返回的 sql_info 数据
-            upgrade_status_map = {
+            # 返回工单名和升级状态
+            status_map = {
                 'UAT升级完成': 100,
                 'SQL待执行': 101,
                 'SQL执行中': 102,
-                'SQL执行失败': 150
+                'SQL执行失败': 150,
+                '代码升级失败': 151
             }
-            sql_info_data = {
-                'summary': jira_obj.summary,
-                'upgrade_status': upgrade_status_map.get(jira_obj.status, jira_obj.status),
-                'sql_info': list()
-            }
+            return_data['data']['summary'] = jira_obj.summary
+            return_data['data']['upgrade_status'] = status_map.get(jira_obj.status, jira_obj.status)
+
+            # 返回 sql 升级信息
+            sql_info_list = list()
             # 存在 sql_id 查询参数时，只返回具体某个 sql 文件的执行结果
             if sql_id:
                 sql_workflow_obj = SqlWorkflow.objects.get(sql_id=sql_id)
@@ -85,15 +95,35 @@ class CICDFlowView(APIView):
                 tmp_dict['sql_id'] = sql_id
                 tmp_dict['status'] = sql_workflow_obj.w_status
                 tmp_dict['errormessage'] = ''
-                sql_info_data['sql_info'].append(tmp_dict)
+                sql_info_list.append(tmp_dict)
             else:
-                sql_workflow_obj = SqlWorkflow.objects.filter(workflow_name=summary)
-                # sql_index 与 workflow_name 相同时，取 sql_release_info 版本较大的值返回
-                from util.cicdflow_util import filtered_queryset
+                # 引入 jira_api 与 archery_api
+                from util.jira_api import JiraAPI
                 from util.archery_api import ArcheryAPI
-                filter_sql_workflow_list = filtered_queryset(sql_workflow_obj)
+                jira_api_obj = JiraAPI()
                 archery_obj = ArcheryAPI()
 
+                # 获取 jira 升级数据
+                issue_info = jira_api_obj.get_issue_info(issue_id=jira_obj.issue_id)
+                sql_info_data = issue_info['data']['sql_info']
+                sql_id_list = [item['sql_id'] for item in sql_info_data]
+
+                # 只获取 jira 存在 sql_id 的数据
+                sql_workflow_obj = SqlWorkflow.objects.filter(
+                    workflow_name=summary,
+                    sql_id__in=sql_id_list
+                ).order_by('sql_index')
+                # 获取 sql 工单对应字段转换为列表
+                filter_sql_workflow_list = [
+                    row for row in sql_workflow_obj.values(
+                        'w_id',
+                        'workflow_name',
+                        'w_status',
+                        'sql_index',
+                        'sql_release_info',
+                        'sql_id'
+                    )
+                ]
                 for sql_item in filter_sql_workflow_list:
                     w_id = sql_item.get('w_id')
                     sql_id = sql_item.get('sql_id')
@@ -109,9 +139,13 @@ class CICDFlowView(APIView):
                     tmp_dict['sql_id'] = sql_id
                     tmp_dict['status'] = w_status
                     tmp_dict['errormessage'] = errormessage
-                    sql_info_data['sql_info'].append(tmp_dict)
+                    sql_info_list.append(tmp_dict)
 
-            return_data['data'] = sql_info_data
+            # 返回 code 升级信息
+            code_info_list = list()
+
+            return_data['data']['sql_info'] = sql_info_list
+            return_data['data']['code_info'] = code_info_list
         except AssertionError as err:
             return_data['code'] = 10500
             return_data['msg'] = 'failed'
@@ -239,7 +273,7 @@ class CICDFlowView(APIView):
             token = "7e896f0d2bab499b9f7170aa3302d3b2"
             assert authorization == token
             # JIRA 实例，用于初始化创建 Jira 升级工单
-            jira_obj = JiraAPI()
+            jira_api_obj = JiraAPI()
 
             # 调用 jira_api 创建或更新工单
             cicdflow_ser = CICDFlowSerializer(data=request.data)
@@ -274,7 +308,7 @@ class CICDFlowView(APIView):
                     # 判断 issue 状态是否为 <SQL待执行> 或 <UAT升级完成>，非此状态抛出异常，不允许更新 issue 数据
                     if issue_status == 'UAT升级完成':
                         d_logger.debug(f"工单：{current_summary} 状态为 <UAT升级完成>，正常流转流程")
-                        trans_result = jira_obj.change_transition(issue_key, 'UAT自动迭代升级')
+                        trans_result = jira_api_obj.change_transition(issue_key, 'UAT自动迭代升级')
                         if not trans_result['status']:
                             return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{trans_result['data']}"
                             d_logger.warning(return_data)
@@ -306,7 +340,7 @@ class CICDFlowView(APIView):
                         d_logger.warning(return_data)
                         return Response(data=return_data, status=status.HTTP_200_OK)
                     # 更新 Jira 工单，失败时抛出异常
-                    update_result = jira_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
+                    update_result = jira_api_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
                     if not update_result['status']:
                         return_data['status'] = False
                         # jira 更新异常返回 JIRAError 类，需要转换为字符串
@@ -315,7 +349,7 @@ class CICDFlowView(APIView):
                     return Response(data=return_data, status=status.HTTP_200_OK)
                 # 不存在工单，新建 Jira 工单触发 issue_updated 事件
                 else:
-                    create_result = jira_obj.issue_create(args=cicdflow_ser_data)
+                    create_result = jira_api_obj.issue_create(args=cicdflow_ser_data)
                     # 新建工单失败，返回错误信息
                     if not create_result['status']:
                         # jira 创建异常返回 JIRAError 类，需要转换为字符串

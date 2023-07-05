@@ -145,33 +145,34 @@ class JiraAPI(object):
         return issue_list
 
     def get_issue_info(self, issue_id=None):
-        if issue_id == None:
-            return {'status':False,'msg':'issue_id is None!','data':None}
+        if issue_id is None:
+            return {'status':False, 'msg': 'issue_id is None!', 'data': None}
         try:
-            field = self.jira.issue(id=issue_id).fields  # 问题域
-            comment_id = self.jira.comments(issue_id)
-            attachment_data = self.get_attachment(issue_id=issue_id)
-            # raw = "无评论" if len(comment_id) == 0 else self.jira.comment(issue_id, comment=comment_id[0]).raw
+            # 问题域所有数据
+            fields = self.jira.issue(id=issue_id).fields
+
+            # 附件数据
+            # attachment_data = self.get_attachment(issue_id=issue_id)
+            # 获取升级数据
+            sql_info_list = literal_eval(fields.customfield_10201)
+            apollo_info_list = literal_eval(fields.customfield_10104)
+            config_info_list = literal_eval(fields.customfield_10100)
+            code_info_list = literal_eval(fields.customfield_10103)
+
+            # 返回 issue 数据
             issue_info = {
-                "issue_id": issue_id,
-                "title": field.summary,
-                "status": field.status.name,
-                'attachment_data': attachment_data,
-                # "labels": field.labels,
-                # "issuetype": field.issuetype,
-                # "descri": field.description,
-                # "priority": field.priority,
-                # "reporter": field.reporter,
-                # "creator": field.creator,
-                # "assignee": field.assignee,
-                # "created_time": field.created,
-                # "updated_time": field.updated,
-                # "comments": raw
+                'issue_id': issue_id,
+                'title': fields.summary,
+                'status': fields.status.name,
+                # 'attachment_data': attachment_data,
+                'sql_info': sql_info_list,
+                'apollo_info': apollo_info_list,
+                'config_info': config_info_list,
+                'code_info_list': code_info_list
             }
-            result = {'status':True,'msg':'查询完毕','data':issue_info}
-            return result
+            return {'status': True, 'msg': '查询完毕', 'data': issue_info}
         except Exception as e:
-            return {'status':False,'msg':'查询失败','data':e}
+            return {'status': False, 'msg': '查询失败', 'data': e}
 
     def get_attachment(self,issue_id=None):
         if issue_id == None:
