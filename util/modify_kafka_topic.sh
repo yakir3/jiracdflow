@@ -1,5 +1,8 @@
 #!/bin/bash
 #
+set -e
+set -o pipefail
+
 function log_info() {
   local message="$@"
   echo "[INFO] $message"

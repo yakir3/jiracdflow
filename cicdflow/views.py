@@ -114,17 +114,27 @@ class CICDFlowView(APIView):
                     sql_id__in=sql_id_list
                 ).order_by('sql_index')
                 # 获取 sql 工单对应字段转换为列表
-                filter_sql_workflow_list = [
+                sql_workflow_list = [
                     row for row in sql_workflow_obj.values(
                         'w_id',
                         'workflow_name',
                         'w_status',
                         'sql_index',
                         'sql_release_info',
-                        'sql_id'
+                        'sql_id',
+                        'create_date'
                     )
                 ]
-                for sql_item in filter_sql_workflow_list:
+                # sql_id 相同时，取 create_date 较大的值返回
+                tmp_filtered_data = {}
+                for item in sql_workflow_list:
+                    sql_id = item['sql_id']
+                    create_date = item['create_date']
+                    if sql_id not in tmp_filtered_data or create_date > tmp_filtered_data[sql_id]['create_date']:
+                        tmp_filtered_data[sql_id] = item
+                filtered_sql_workflow_list = list(tmp_filtered_data.values())
+
+                for sql_item in filtered_sql_workflow_list:
                     w_id = sql_item.get('w_id')
                     sql_id = sql_item.get('sql_id')
                     w_status = sql_item.get('w_status')
@@ -323,12 +333,6 @@ class CICDFlowView(APIView):
                         return_data['status'] = True
                         return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行> 或 <SQL执行失败>，重新提交 SQL 触发完整升级流程"
                         return_data['jira_issue_key'] = issue_key
-                        # # 无数据变化时，强制触发 jira 的状态变化
-                        # try:
-                        #     sleep(3)
-                        #     jira_obj.change_transition(issue_key, '触发提交SQL')
-                        # except Exception as err:
-                        #     print(err.__str__())
                         d_logger.info(return_data)
                     # elif issue_status == '开发/运维修改':
                     #     return_data['status'] = True
@@ -441,6 +445,7 @@ class JiraFlowView(APIView):
                     # SQL执行中 状态，可转变状态：SQL升级成功 ｜ SQL升级失败
                     case 'SQL执行中':
                         webhook_result = jira_event_webhook_obj.updated_event_sql_inprogress(
+                            last_issue_obj=last_issue_obj,
                             sql_workflow_ins=SqlWorkflow,
                             current_issue_data=jiraworkflow_ser_data
                         )

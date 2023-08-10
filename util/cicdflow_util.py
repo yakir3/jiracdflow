@@ -13,7 +13,7 @@ from util.svn_client import SvnClient
 from util.email_tool import EmailClient
 from util.pgsql_api import PostgresClient
 
-__all__ = ['JiraEventWebhookAPI', 'JiraAPI', 'filtered_queryset']
+__all__ = ['JiraEventWebhookAPI', 'JiraAPI']
 
 # JIRA 实例，用于获取 issue 状态以及转换状态
 jira_obj = JiraAPI()
@@ -162,21 +162,21 @@ def get_backup_commit_data(sql_instance_name: str, sql_content_value: str) -> Un
         print(err.__str__())
         return None
 
-def filtered_queryset(
-        queryset: Any
-):
-    rows = [row for row in queryset.values('w_id', 'workflow_name', 'w_status', 'sql_index', 'sql_release_info', 'sql_id')]
-    # 过滤 sql_index 和 workflow_name 字段相同数据时，取 sql_release_info 最大的数据
-    max_sql_release_info = defaultdict(int)
-    filtered_rows = []
-    for row in rows:
-        key = (row['sql_index'], row['workflow_name'])
-        if row['sql_release_info'] > max_sql_release_info[key]:
-            max_sql_release_info[key] = row['sql_release_info']
-            filtered_rows = [r for r in filtered_rows if (r['sql_index'], r['workflow_name']) != key]
-        if row['sql_release_info'] == max_sql_release_info[key]:
-            filtered_rows.append(row)
-    return filtered_rows
+# def filtered_queryset(
+#         queryset: Any
+# ):
+#     rows = [row for row in queryset.values('w_id', 'workflow_name', 'w_status', 'sql_index', 'sql_release_info', 'sql_id')]
+#     # 过滤 sql_index 和 workflow_name 字段相同数据时，取 sql_release_info 最大的数据
+#     max_sql_release_info = defaultdict(int)
+#     filtered_rows = []
+#     for row in rows:
+#         key = (row['sql_index'], row['workflow_name'])
+#         if row['sql_release_info'] > max_sql_release_info[key]:
+#             max_sql_release_info[key] = row['sql_release_info']
+#             filtered_rows = [r for r in filtered_rows if (r['sql_index'], r['workflow_name']) != key]
+#         if row['sql_release_info'] == max_sql_release_info[key]:
+#             filtered_rows.append(row)
+#     return filtered_rows
 
 def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upgrade_info_list: List) -> Tuple:
     # 实例化 cmdb 对象，调用 upgrade 方法升级代码
@@ -291,6 +291,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
         """
         <待执行SQL> 状态，判断升级为首次升级或迭代升级
         """
+        # webhook 触发先更新 SqlWorkflow 表数据，进入<SQL待执行>状态
+        last_issue_obj.status = 'SQL待执行'
+        last_issue_obj.save()
+
         try:
             # last_sql_info = last_issue_obj.sql_info
             current_issue_key = current_issue_data['issue_key']
@@ -398,24 +402,24 @@ class JiraEventWebhookAPI(JiraWebhookData):
             last_issue_obj.sql_info = current_sql_info
             last_issue_obj.init_flag['sql_init_flag'] += 1
             if len(commit_sql_list) == len(commit_success_list):
-                last_issue_obj.status = 'SQL执行中'
-                last_issue_obj.save()
                 self._webhook_return_data['msg'] = f"所有待执行 SQL 提交成功，升级工单 {current_summary} 触发转换 <提交SQL> 到状态 <SQL执行中>"
                 jira_obj.change_transition(current_issue_key, '提交SQL')
             else:
-                last_issue_obj.status = 'SQL待执行'
-                last_issue_obj.save()
-                self._webhook_return_data['msg'] = f"存在待执行 SQL 工单提交失败，升级工单 {current_summary} 保持 <SQL待执行> 状态等待修复"
                 self._webhook_return_data['status'] = False
+                self._webhook_return_data['msg'] = f"存在待执行 SQL 工单提交失败，升级工单 {current_summary} 保持 <SQL待执行> 状态等待修复"
         except Exception as err:
             self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = f"<SQL待执行> 状态 webhook 触发失败，异常原因：{err.__str__()}"
         return self._webhook_return_data
 
-    def updated_event_sql_inprogress(self, sql_workflow_ins: Any, current_issue_data: Dict):
+    def updated_event_sql_inprogress(self, last_issue_obj: Any, sql_workflow_ins: Any, current_issue_data: Dict):
         """
         <SQL执行中> 状态，按升级序号顺序 审核+执行 SQL 工单，出现异常则中断执行
         """
+        # webhook 触发先更新 SqlWorkflow 表数据，进入<SQL执行中>状态
+        last_issue_obj.status = 'SQL执行中'
+        last_issue_obj.save()
+
         current_issue_key = current_issue_data['issue_key']
         current_sql_info = current_issue_data['sql_info']
         current_summary = current_issue_data['summary']
@@ -432,7 +436,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
         # 判断是否存在需要备份工单，先执行备份工单再执行后续 SQL
         if bk_sql_workflow_obj:
             bk_sql_list = [row for row in bk_sql_workflow_obj.values('w_id')]
-            for bk_sql_wid in bk_sql_list:
+            for bk_sql_item in bk_sql_list:
+                bk_sql_wid = bk_sql_item['w_id']
                 try:
                     # 审核备份工单
                     audit_result = archery_obj.audit_workflow(workflow_id=bk_sql_wid)
@@ -538,13 +543,13 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 execute_status = select_execute_result['data'][0]['status']
                 execute_ins.w_status = execute_status
                 execute_ins.save()
+                print(f"{current_summary} SQL 执行成功, SQL 版本: {execute_sql_data['sql_release_info']}, SQL ID: {execute_sql_data['sql_id']}")
                 if not execute_status == 'workflow_finish':
                     self._webhook_return_data['status'] = False
                     self._webhook_return_data[
                         'msg'] = f"工单 {current_summary}  存在执行结果为异常的 SQL，失败原因：{execute_result['data']}"
                     jira_obj.change_transition(current_issue_key, 'SQL升级失败')
                     break
-
             # 自动执行结束，核实是否还存在 workflow_review_pass 状态工单
             if execute_sql_obj:
                 self._webhook_return_data['status'] = False
@@ -573,6 +578,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 'msg'] = f"升级工单 {current_summary} 所有 SQL 执行成功，触发转换 <SQL升级成功> 到状态 <CONFIG执行中>"
             jira_obj.change_transition(current_issue_key, 'SQL升级成功')
         except AssertionError as err:
+            self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = err.__str__()
         except Exception as err:
             self._webhook_return_data['status'] = False
@@ -584,6 +590,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
         """
         <CONFIG执行中> 状态，判断流程为首次升级或迭代升级
         """
+        # webhook 触发先更新 SqlWorkflow 表数据，进入<CONFIG执行中>状态
+        last_issue_obj.status = 'CONFIG执行中'
+        last_issue_obj.save()
+
         try:
             # last_apollo_info = last_issue_obj.apollo_info
             # last_config_info = last_issue_obj.config_info
