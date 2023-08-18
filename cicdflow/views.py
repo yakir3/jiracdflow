@@ -299,6 +299,8 @@ class CICDFlowView(APIView):
                     'A19',
                     'RS8',
                     'B01',
+                    'TCBS',
+                    'ISLOT'
                 ]
                 current_project = cicdflow_ser_data['project']
                 if current_project in ac_project_list:

@@ -115,6 +115,10 @@ def get_sql_commit_data(
                 'resource_tag': sql_resource_name,
                 'instance_tag': sql_instance_name
             } if bk_sql_content_value else None
+        elif 'ISLOT' in svn_path_up:
+            sql_resource_name = svn_path.split('/')[1].upper()
+            sql_instance_name = svn_path.split('/')[1]
+            bk_commit_data = None
         else:
             raise ValueError("svn 路径不包含 ac 或 qc 关键字路径，请确认是否正确输入 svn 路径")
         commit_data = {
@@ -386,7 +390,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                             sql_ser.save()
                             print(f"SQL：{svn_file} 提交成功，提交版本：{svn_version}，对应工单：{current_issue_key}")
                         else:
-                            print(f"SQL：{svn_file} 提交失败，提交版本：{svn_version}，对应工单：{current_issue_key}，错误原因：{commit_result['msg']}")
+                            print(f"SQL：{svn_file} 提交失败，提交版本：{svn_version}，对应工单：{current_issue_key}，错误原因：{commit_result['data']}")
 
             # 只有全部 SQL 提交成功才转换为 <SQL执行中>，只要有 SQL 提交失败不转换状态
             commit_success_list = []
@@ -614,7 +618,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             last_issue_obj.config_info = current_config_info
             # webhook 中 apollo_info 与 config_info 数据都为空，直接触发到下一流程
             if not apollo_exists and not config_exists:
-                last_issue_obj.status = 'CODE执行中'
+                # last_issue_obj.status = 'CODE执行中'
                 last_issue_obj.init_flag['apollo_init_flag'] += 1
                 last_issue_obj.init_flag['config_init_flag'] += 1
                 last_issue_obj.save()
@@ -624,7 +628,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 return self._webhook_return_data
             # apollo_info 或 config_info 数据只要不为空，判断 has_deploy_uat 字段是否存在 False
             elif not apollo_has_deploy and not config_has_deploy:
-                last_issue_obj.status = 'CODE执行中'
+                # last_issue_obj.status = 'CODE执行中'
                 last_issue_obj.init_flag['apollo_init_flag'] += 1
                 last_issue_obj.init_flag['config_init_flag'] += 1
                 last_issue_obj.save()
