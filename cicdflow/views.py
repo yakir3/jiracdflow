@@ -77,11 +77,11 @@ class CICDFlowView(APIView):
 
             # 返回工单名和升级状态
             status_map = {
-                'UAT升级完成': 100,
-                'SQL待执行': 101,
-                'SQL执行中': 102,
-                'SQL执行失败': 150,
-                '代码升级失败': 151
+                'UAT UPGRADED': 100,
+                'SQL PENDING': 101,
+                'SQL PROCESSING': 102,
+                'SQL PROCESSING FAILED': 150,
+                'CODE PROCESSING FAILED': 151
             }
             return_data['data']['summary'] = jira_obj.summary
             return_data['data']['upgrade_status'] = status_map.get(jira_obj.status, jira_obj.status)
@@ -300,7 +300,8 @@ class CICDFlowView(APIView):
                     'RS8',
                     'B01',
                     'TCBS',
-                    'ISLOT'
+                    'ISLOT',
+                    'GGK'
                 ]
                 current_project = cicdflow_ser_data['project']
                 if current_project in ac_project_list:
@@ -312,37 +313,41 @@ class CICDFlowView(APIView):
                 # 使用升级标题（唯一值）查询数据库是否已存在升级工单
                 current_summary = cicdflow_ser_data.get('summary')
                 jira_issue_obj_exists = JiraWorkflow.objects.filter(summary=current_summary)
+
                 # 工单标题已存在，更新 Jira 工单并转换状态到 <UAT自动迭代升级> 进行迭代升级
                 if jira_issue_obj_exists:
                     jira_issue_obj = jira_issue_obj_exists.get()
                     issue_key = jira_issue_obj.issue_key
                     issue_status = jira_issue_obj.status
-                    # 判断 issue 状态是否为 <SQL待执行> 或 <UAT升级完成>，非此状态抛出异常，不允许更新 issue 数据
-                    if issue_status == 'UAT升级完成':
-                        d_logger.debug(f"工单：{current_summary} 状态为 <UAT升级完成>，正常流转流程")
+                    # 判断 issue 状态是否为 <SQL PENDING> 或 <UAT UPGRADED>，非此状态抛出异常，不允许更新 issue 数据
+                    if issue_status in ['UAT UPGRADED']:
+                        d_logger.debug(f"工单：{current_summary} 状态为 <UAT UPGRADED>，正常流转流程")
                         trans_result = jira_api_obj.change_transition(issue_key, 'UAT自动迭代升级')
                         if not trans_result['status']:
                             return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{trans_result['data']}"
                             d_logger.warning(return_data)
-                        # 从 <UAT升级完成> 状态变更，开始迭代升级
+                        # 从 <UAT UPGRADED> 状态变更，开始迭代升级
                         else:
                             return_data['status'] = True
                             return_data['msg'] = '已存在 Jira 工单，转换工单状态到<UAT自动迭代升级>，开始完整迭代升级流程。'
                             return_data['jira_issue_key'] = issue_key
                             d_logger.info(return_data)
-                    # SQL待执行 状态数据有变化时会自动触发 webhook，无需人为调用 change_transition 方法变更状态
-                    elif issue_status == 'SQL待执行' or issue_status == 'SQL执行失败':
+                    # SQL PENDING 状态数据有变化时会自动触发 webhook，无需人为调用 change_transition 方法变更状态
+                    elif issue_status in ['SQL PENDING', 'SQL PROCESSING FAILED']:
                         return_data['status'] = True
-                        return_data['msg'] = f"工单：{current_summary} 状态为 <SQL待执行> 或 <SQL执行失败>，重新提交 SQL 触发完整升级流程"
+                        return_data['msg'] = f"工单：{current_summary} 状态为 <SQL PENDING> 或 <SQL PROCESSING FAILED>，重新提交 SQL 触发完整升级流程"
                         return_data['jira_issue_key'] = issue_key
                         d_logger.info(return_data)
-                    # elif issue_status == '开发/运维修改':
-                    #     return_data['status'] = True
-                    #     return_data['msg'] = f"工单：{current_summary} 状态为 <开发/运维修改>，开始完整迭代升级流程"
-                    #     return_data['jira_issue_key'] = issue_key
-                    #     d_logger.info(return_data)
+                    elif issue_status ['CODE PROCESSING FAILED', 'FIX PENDING']:
+                        return_data['status'] = True
+                        return_data['msg'] = f"工单：{current_summary} 状态为 <CODE PROCESSING FAILED> 或 <FIX PENDING>，开始完整迭代升级流程"
+                        return_data['jira_issue_key'] = issue_key
+                        jira_api_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
+                        jira_api_obj.change_transition(issue_key, '重新提交UAT迭代升级')
+                        d_logger.info(return_data)
+                        return Response(data=return_data, status=status.HTTP_200_OK)
                     else:
-                        return_data['msg'] = '当前工单 issue 状态非 <SQL待执行> 或 <UAT升级完成> 或 <开发/运维修改> ，不允许开始升级流程，检查当前工单状态'
+                        return_data['msg'] = '当前工单 issue 状态非 <SQL PENDING> 或 <UAT UPGRADED> 或 <FIX PENDING> ，不允许开始升级流程，检查当前工单状态'
                         d_logger.warning(return_data)
                         return Response(data=return_data, status=status.HTTP_200_OK)
                     # 更新 Jira 工单，失败时抛出异常
@@ -388,12 +393,11 @@ class JiraFlowView(APIView):
     swagger_schema = None
     """
     webhook 条件：
-        project = AC and issuetype in (升级) and status in (SQL待执行, SQL执行中, CONFIG执行中,CODE执行中,"开发/运维修改")
-        project = QC and issuetype in (升级) and status in (SQL待执行, SQL执行中, CONFIG执行中,CODE执行中,"开发/运维修改")
+        project in (AC, QC) and issuetype in (升级) and status in ("SQL PENDING,"SQL PROCESSING","CONFIG PROCESSING","CODE PROCESSING")
     webhook 判断：
         webhookEvent = jira:issue_created  --> 首次创建 jira issue，初始化升级数据
         webhookEvent = jira:issue_updated  --> 迭代或重新提交升级，更新升级数据，已最新数据重跑升级流程
-            SQL待执行：判断是否存在 SQL，存在则提交到 Archery 
+            SQL PENDING：判断是否存在 SQL，存在则提交到 Archery 
             SQL执行中：由 DBA 人工触发进入下一步
             CONFIG执行中：由运维人员人工触发进入下一步
             CODE执行中：判断是否有代码升级
@@ -436,32 +440,36 @@ class JiraFlowView(APIView):
                 # 判断当前 webhook 状态，根据状态获取数据进行变更。每次转换状态前更新当前 issue DB 数据
                 jiraworkflow_ser_data = dict(jiraworkflow_ser.validated_data)
                 match current_status:
-                    # SQL待执行 状态，可转变状态：无SQL升级/已升级 ｜ 提交SQL
-                    case 'SQL待执行':
-                        webhook_result = jira_event_webhook_obj.updated_event_sql_waiting(
+                    # SQL PENDING 状态，可转变状态：无SQL升级/已升级 ｜ 提交SQL
+                    case 'SQL PENDING':
+                        webhook_result = jira_event_webhook_obj.updated_event_sql_pending(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jiraworkflow_ser_data,
                             sqlworkflow_ser=SqlWorkflowSerializer,
                             sql_workflow_ins=SqlWorkflow
                         )
                     # SQL执行中 状态，可转变状态：SQL升级成功 ｜ SQL升级失败
-                    case 'SQL执行中':
+                    case 'SQL PROCESSING':
                         webhook_result = jira_event_webhook_obj.updated_event_sql_inprogress(
                             last_issue_obj=last_issue_obj,
                             sql_workflow_ins=SqlWorkflow,
                             current_issue_data=jiraworkflow_ser_data
                         )
                     # CONFIG执行中 状态，可转变状态：无配置升级/已升级 ｜ 配置升级成功 ｜ 配置升级失败
-                    case 'CONFIG执行中':
+                    case 'CONFIG PROCESSING':
                         webhook_result = jira_event_webhook_obj.updated_event_config_inprogress(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jiraworkflow_ser_data
                         )
-                    # CODE执行中 状态，可转变状态：无代码升级/已升级 ｜ 代码升级成功 ｜ 代码升级失败
-                    case 'CODE执行中':
+                    # CODE执行中 状态，可转变状态：无代码升级/已升级 ｜ 代码升级成功 ｜ CODE PROCESSING FAILED
+                    case 'CODE PROCESSING':
                         webhook_result = jira_event_webhook_obj.updated_event_code_inprogress(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jiraworkflow_ser_data
+                        )
+                    case 'FIX PENDING':
+                        webhook_result = jira_event_webhook_obj.updated_event_modify(
+                            current_issue_key=current_issue_key
                         )
                     case _:
                         sleep(1)

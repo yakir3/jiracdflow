@@ -35,16 +35,16 @@ class PostgresClient(object):
             sql_content = f"""select table_name from information_schema."tables" t where
 table_schema = '{self.scheme}'
 and table_catalog = '{self.database}'
-and table_name like 'bk_{today_format}_%_{table_name}%';"""
+and table_name like 'bk{today_format}_%_{table_name}%';"""
             self._cursor.execute(sql_content)
             # 查询当前是否存在备份表，返回备份表名
             execute_result = self._cursor.fetchall()
             if not execute_result:
-                bk_table_name_list = ['bk', today_format, '1', table_name]
+                bk_table_name_list = [today_format, '1', table_name]
             else:
                 last_bk_table_name = execute_result[-1][0]
                 current_bk_index = int(last_bk_table_name.split('_')[2]) + 1
-                bk_table_name_list = ['bk', today_format, str(current_bk_index), table_name]
+                bk_table_name_list = [today_format, str(current_bk_index), table_name]
             return bk_table_name_list
         except Exception as err:
             return_data = {

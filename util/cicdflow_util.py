@@ -119,6 +119,10 @@ def get_sql_commit_data(
             sql_resource_name = svn_path.split('/')[1].upper()
             sql_instance_name = svn_path.split('/')[1]
             bk_commit_data = None
+        elif 'GGK' in svn_path_up:
+            sql_resource_name = 'GGK'
+            sql_instance_name = 'ggk-uat'
+            bk_commit_data = None
         else:
             raise ValueError("svn 路径不包含 ac 或 qc 关键字路径，请确认是否正确输入 svn 路径")
         commit_data = {
@@ -155,10 +159,10 @@ def get_backup_commit_data(sql_instance_name: str, sql_content_value: str) -> Un
             bk_table_name_list = pg_obj.select_bk_table(table_name=r_matches.group(1))
             if not bk_table_flag:
                 bk_table_flag = bk_table_name_list
-                bk_table_name = '_'.join(bk_table_name_list)
+                bk_table_name = 'bk' + '_'.join(bk_table_name_list)
             else:
                 bk_table_flag[2] = str(int(bk_table_flag[2]) + 1)
-                bk_table_name = '_'.join(bk_table_flag)
+                bk_table_name = 'bk' + '_'.join(bk_table_flag)
             bk_sql_content = f"create table {bk_table_name} as select * from {r_matches.group(1)} {r_matches.group(2)};"
             bk_sql_content_value += f"{bk_sql_content}\n"
         return bk_sql_content_value
@@ -280,10 +284,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
             serializer.save()
             # 判断是否有 SQL 升级数据：触发进入下一步流程
             if not current_sql_info:
-                self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单无SQL升级数据，触发转换 <无SQL升级/已升级> 到状态 <CONFIG执行中>"
+                self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单无SQL升级数据，触发转换 <无SQL升级/已升级> 到状态 <CONFIG PROCESSING>"
                 jira_obj.change_transition(current_issue_key, '无SQL升级/已升级')
             else:
-                self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单有SQL升级数据，触发转换 <触发提交SQL> 到状态 <SQL待执行>"
+                self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单有SQL升级数据，触发转换 <触发提交SQL> 到状态 <SQL PENDING>"
                 jira_obj.change_transition(current_issue_key, '触发提交SQL')
         except Exception as err:
             self._webhook_return_data['status'] = False
@@ -291,12 +295,12 @@ class JiraEventWebhookAPI(JiraWebhookData):
         self._webhook_return_data['data'] = current_issue_data
         return self._webhook_return_data
 
-    def updated_event_sql_waiting(self, last_issue_obj: Any, current_issue_data: Dict, sqlworkflow_ser: Any, sql_workflow_ins: Any):
+    def updated_event_sql_pending(self, last_issue_obj: Any, current_issue_data: Dict, sqlworkflow_ser: Any, sql_workflow_ins: Any):
         """
         <待执行SQL> 状态，判断升级为首次升级或迭代升级
         """
-        # webhook 触发先更新 SqlWorkflow 表数据，进入<SQL待执行>状态
-        last_issue_obj.status = 'SQL待执行'
+        # webhook 触发先更新 SqlWorkflow 表数据，进入<SQL PENDING>状态
+        last_issue_obj.status = 'SQL PENDING'
         last_issue_obj.save()
 
         try:
@@ -311,35 +315,35 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # 实例化 archery 对象，调用 commit_workflow 方法提交sql审核执行
             archery_obj = ArcheryAPI()
 
-            # 从<SQL执行中>状态转换来的 webhook 只更新数据不做操作
-            if self.webhook_from == "SQL执行中":
-                last_issue_obj.status = 'SQL执行失败'
+            # 从<SQL PROCESSING>状态转换来的 webhook 只更新数据不做操作
+            if self.webhook_from == "SQL PROCESSING":
+                last_issue_obj.status = 'SQL PROCESSING FAILED'
                 # last_issue_obj.init_flag['sql_init_flag'] += 1
                 last_issue_obj.save()
-                self._webhook_return_data['msg'] = f"从<SQL执行中>状态转换而来，不触发 webhook 操作，保持<SQL待执行>状态等待重新触发"
+                self._webhook_return_data['msg'] = f"从<SQL PROCESSING>状态转换而来，不触发 webhook 操作，保持<SQL PENDING>状态等待重新触发"
                 return self._webhook_return_data
 
             # webhook 中 sql_info 数据为空，直接触发到下一流程
             sql_exists = bool(current_sql_info)
             if not sql_exists:
-                last_issue_obj.status = 'CONFIG执行中'
+                last_issue_obj.status = 'CONFIG PROCESSING'
                 last_issue_obj.init_flag['sql_init_flag'] += 1
                 last_issue_obj.save()
                 jira_obj.change_transition(current_issue_key, '无SQL升级/已升级')
                 self._webhook_return_data[
-                    'msg'] = f"SQL 升级数据为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG执行中>"
+                    'msg'] = f"SQL 升级数据为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG PROCESSING>"
                 return self._webhook_return_data
 
             # Jira 的 sql_info 数据中对比当前所有需要提交 SQL 工单是否已全部存入 SqlWorkflow 表中
             commit_sql_list = [item for item in current_sql_info if not item['has_deploy_uat']]
             # webhook 中 sql_info 数据所有 has_deploy_uat 字段值都为 True, 直接触发到下一流程
             if not commit_sql_list:
-                last_issue_obj.status = 'CONFIG执行中'
+                last_issue_obj.status = 'CONFIG PROCESSING'
                 last_issue_obj.init_flag['sql_init_flag'] += 1
                 last_issue_obj.save()
                 jira_obj.change_transition(current_issue_key, '无SQL升级/已升级')
                 self._webhook_return_data[
-                    'msg'] = f"SQL 升级已在 UAT 环境执行，无需重复执行。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG执行中>"
+                    'msg'] = f"SQL 升级已在 UAT 环境执行，无需重复执行。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG PROCESSING>"
                 return self._webhook_return_data
 
             # 轮循当前 sql_info 数据，根据 has_deploy_uat 值判断是否需要提交 SQL
@@ -392,7 +396,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                         else:
                             print(f"SQL：{svn_file} 提交失败，提交版本：{svn_version}，对应工单：{current_issue_key}，错误原因：{commit_result['data']}")
 
-            # 只有全部 SQL 提交成功才转换为 <SQL执行中>，只要有 SQL 提交失败不转换状态
+            # 只有全部 SQL 提交成功才转换为 <SQL PROCESSING>，只要有 SQL 提交失败不转换状态
             commit_success_list = []
             for sql_item in commit_sql_list:
                 sql_workflow_obj = sql_workflow_ins.objects.filter(
@@ -406,24 +410,25 @@ class JiraEventWebhookAPI(JiraWebhookData):
             last_issue_obj.sql_info = current_sql_info
             last_issue_obj.init_flag['sql_init_flag'] += 1
             if len(commit_sql_list) == len(commit_success_list):
-                self._webhook_return_data['msg'] = f"所有待执行 SQL 提交成功，升级工单 {current_summary} 触发转换 <提交SQL> 到状态 <SQL执行中>"
+                self._webhook_return_data['msg'] = f"所有待执行 SQL 提交成功，升级工单 {current_summary} 触发转换 <提交SQL> 到状态 <SQL PROCESSING>"
                 jira_obj.change_transition(current_issue_key, '提交SQL')
             else:
                 self._webhook_return_data['status'] = False
-                self._webhook_return_data['msg'] = f"存在待执行 SQL 工单提交失败，升级工单 {current_summary} 保持 <SQL待执行> 状态等待修复"
+                self._webhook_return_data['msg'] = f"存在待执行 SQL 工单提交失败，升级工单 {current_summary} 保持 <SQL PENDING> 状态等待修复"
         except Exception as err:
             self._webhook_return_data['status'] = False
-            self._webhook_return_data['msg'] = f"<SQL待执行> 状态 webhook 触发失败，异常原因：{err.__str__()}"
+            self._webhook_return_data['msg'] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
         return self._webhook_return_data
 
     def updated_event_sql_inprogress(self, last_issue_obj: Any, sql_workflow_ins: Any, current_issue_data: Dict):
         """
-        <SQL执行中> 状态，按升级序号顺序 审核+执行 SQL 工单，出现异常则中断执行
+        <SQL PROCESSING> 状态，按升级序号顺序 审核+执行 SQL 工单，出现异常则中断执行
         """
-        # webhook 触发先更新 SqlWorkflow 表数据，进入<SQL执行中>状态
-        last_issue_obj.status = 'SQL执行中'
+        # webhook 触发先更新 SqlWorkflow 表数据，进入<SQL PROCESSING>状态
+        last_issue_obj.status = 'SQL PROCESSING'
         last_issue_obj.save()
 
+        last_sql_info = last_issue_obj.sql_info
         current_issue_key = current_issue_data['issue_key']
         current_sql_info = current_issue_data['sql_info']
         current_summary = current_issue_data['summary']
@@ -460,10 +465,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
         try:
             # 获取并判断 SQL 工单状态
-            # workflow_manreviewing：将所有 SQL 工单都转换为 <workflow_review_pass> 状态，一旦存在审核失败，将 Jira 状态触发 <SQL执行失败> 转换到 <SQL待执行>
-            # workflow_review_pass：按顺序执行 SQL 工单，一旦失败终止当前及后续 SQL 工单，将 Jira 状态转换为 <SQL待执行>
+            # workflow_manreviewing：将所有 SQL 工单都转换为 <workflow_review_pass> 状态，一旦存在审核失败，将 Jira 状态触发 <SQL执行失败> 转换到 <SQL PENDING>
+            # workflow_review_pass：按顺序执行 SQL 工单，一旦失败终止当前及后续 SQL 工单，将 Jira 状态转换为 <SQL PENDING>
             # workflow_queuing / workflow_exception：终止流程
-            # workflow_finish：所有工单执行完成，将 Jira 状态触发 <SQL执行成功> 转换到 <CONFIG执行中>
+            # workflow_finish：所有工单执行完成，将 Jira 状态触发 <SQL执行成功> 转换到 <CONFIG PROCESSING>
 
             # 开始升级 SQL
             start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -491,7 +496,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 # 工单为待审核状态时，调用 archery_api 方法审核通过工单
                 if sql_workflow_status == 'workflow_manreviewing':
                     audit_result = archery_obj.audit_workflow(workflow_id=w_id)
-                    # 工单自动审核失败，不继续审核。将 Jira 工单转换为 <SQL待执行> 状态
+                    # 工单自动审核失败，不继续审核。将 Jira 工单转换为 <SQL PENDING> 状态
                     if not audit_result['status']:
                         self._webhook_return_data['status'] = False
                         self._webhook_return_data['msg'] = f"工单 {current_summary} 有 SQL 自动审核失败，失败原因：{audit_result['data']}"
@@ -534,7 +539,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
                 # 工单为审核通过时，调用 archery_api 方法执行工单
                 execute_result = archery_obj.execute_workflow(workflow_id=w_id)
-                # 工单自动执行失败，终止执行。将 Jira 工单转换为 <SQL待执行> 状态
+                # 工单自动执行失败，终止执行。将 Jira 工单转换为 <SQL PENDING> 状态
                 if not execute_result['status']:
                     self._webhook_return_data['status'] = False
                     self._webhook_return_data[
@@ -568,7 +573,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # SQl 升级结束，无代码升级则直接发出邮件
             end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f'执行 SQL 结束，结束时间：{end_time}')
-            if not current_code_info:
+            if not current_code_info or not compare_list_info(last_sql_info, current_code_info):
                 upgrade_info_list = []
                 try:
                     sql_upgrade_flag.pop(current_summary)
@@ -579,23 +584,23 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
             # SQL 升级成功，转换 Jira 工单状态
             self._webhook_return_data[
-                'msg'] = f"升级工单 {current_summary} 所有 SQL 执行成功，触发转换 <SQL升级成功> 到状态 <CONFIG执行中>"
+                'msg'] = f"升级工单 {current_summary} 所有 SQL 执行成功，触发转换 <SQL升级成功> 到状态 <CONFIG PROCESSING>"
             jira_obj.change_transition(current_issue_key, 'SQL升级成功')
         except AssertionError as err:
             self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = err.__str__()
         except Exception as err:
             self._webhook_return_data['status'] = False
-            self._webhook_return_data['msg'] = f"<SQL执行中> 状态 webhook 触发失败，异常原因：{err.__str__()}"
+            self._webhook_return_data['msg'] = f"<SQL PROCESSING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
         # self._webhook_return_data['data'] = current_issue_data
         return self._webhook_return_data
 
     def updated_event_config_inprogress(self, last_issue_obj: Any, current_issue_data: Dict):
         """
-        <CONFIG执行中> 状态，判断流程为首次升级或迭代升级
+        <CONFIG PROCESSING> 状态，判断流程为首次升级或迭代升级
         """
-        # webhook 触发先更新 SqlWorkflow 表数据，进入<CONFIG执行中>状态
-        last_issue_obj.status = 'CONFIG执行中'
+        # webhook 触发先更新 SqlWorkflow 表数据，进入<CONFIG PROCESSING>状态
+        last_issue_obj.status = 'CONFIG PROCESSING'
         last_issue_obj.save()
 
         try:
@@ -618,23 +623,21 @@ class JiraEventWebhookAPI(JiraWebhookData):
             last_issue_obj.config_info = current_config_info
             # webhook 中 apollo_info 与 config_info 数据都为空，直接触发到下一流程
             if not apollo_exists and not config_exists:
-                # last_issue_obj.status = 'CODE执行中'
                 last_issue_obj.init_flag['apollo_init_flag'] += 1
                 last_issue_obj.init_flag['config_init_flag'] += 1
                 last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, '无配置升级/已升级')
+                jira_obj.change_transition(current_issue_key, 'NoConfigUpgrade/AlreadyUpgrade')
                 self._webhook_return_data[
-                    'msg'] = f"Apollo与配置文件为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <无配置升级/已升级> 到状态 <CODE执行中>"
+                    'msg'] = f"Apollo与配置文件为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <NoConfigUpgrade/AlreadyUpgrade> 到状态 <CODE PROCESSING>"
                 return self._webhook_return_data
             # apollo_info 或 config_info 数据只要不为空，判断 has_deploy_uat 字段是否存在 False
             elif not apollo_has_deploy and not config_has_deploy:
-                # last_issue_obj.status = 'CODE执行中'
                 last_issue_obj.init_flag['apollo_init_flag'] += 1
                 last_issue_obj.init_flag['config_init_flag'] += 1
                 last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, '无配置升级/已升级')
+                jira_obj.change_transition(current_issue_key, 'NoConfigUpgrade/AlreadyUpgrade')
                 self._webhook_return_data[
-                    'msg'] = f"Apollo与配置文件已升级 UAT 环境，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <无配置升级/已升级> 到状态 <CODE执行中>"
+                    'msg'] = f"Apollo与配置文件已升级 UAT 环境，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <NoConfigUpgrade/AlreadyUpgrade> 到状态 <CODE PROCESSING>"
                 return self._webhook_return_data
 
             # 卡住流程，等待人工处理
@@ -642,7 +645,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             return self._webhook_return_data
         except Exception as err:
             self._webhook_return_data['status'] = False
-            self._webhook_return_data['msg'] = f"<CONFIG执行中> 状态 webhook 触发失败，异常原因：{err.__str__()}"
+            self._webhook_return_data['msg'] = f"<CONFIG PROCESSING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
         self._webhook_return_data['data'] = current_issue_data
         return self._webhook_return_data
 
@@ -654,21 +657,21 @@ class JiraEventWebhookAPI(JiraWebhookData):
         current_summary = current_issue_data['summary']
         # current_environment = current_issue_data['environment']
 
-        # webhook 触发先更新 SqlWorkflow 表数据，进入<CODE执行中>状态
-        last_issue_obj.status = 'CODE执行中'
+        # webhook 触发先更新 SqlWorkflow 表数据，进入<CODE PROCESSING>状态
+        last_issue_obj.status = 'CODE PROCESSING'
         last_issue_obj.save()
 
         try:
             # webhook 中 code_info 数据为空，直接触发到下一流程
             code_exists = bool(current_code_info)
             if not code_exists:
-                last_issue_obj.status = 'UAT升级完成'
+                last_issue_obj.status = 'UAT UPGRADED'
                 last_issue_obj.init_flag['code_init_flag'] += 1
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.save()
                 jira_obj.change_transition(current_issue_key, '无代码升级/已升级')
                 self._webhook_return_data[
-                    'msg'] = f"代码升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <无代码升级/已升级> 到状态 <UAT升级完成>"
+                    'msg'] = f"代码升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <无代码升级/已升级> 到状态 <UAT UPGRADED>"
                 return self._webhook_return_data
 
             # current_code_info 数据调整
@@ -683,12 +686,12 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 upgrade_success_list = last_code_info
                 # 迭代升级，对比与上一次 webhook 中 code_info 数据，无变化则触发跳过流程
                 if not wait_upgrade_list:
-                    last_issue_obj.status = 'UAT升级完成'
+                    last_issue_obj.status = 'UAT UPGRADED'
                     last_issue_obj.init_flag['code_init_flag'] += 1
                     last_issue_obj.save()
                     jira_obj.change_transition(current_issue_key, '无代码升级/已升级')
                     self._webhook_return_data[
-                        'msg'] = f"代码迭代升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <无代码升级/已升级> 到状态 <UAT升级完成>"
+                        'msg'] = f"代码迭代升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <无代码升级/已升级> 到状态 <UAT UPGRADED>"
                     return self._webhook_return_data
             # 初始化首次升级代码数据
             else:
@@ -714,12 +717,12 @@ class JiraEventWebhookAPI(JiraWebhookData):
             if upgrade_success_list == current_code_info or not compare_list_info(
                     upgrade_success_list,
                     current_code_info):
-                last_issue_obj.status = 'UAT升级完成'
+                last_issue_obj.status = 'UAT UPGRADED'
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.init_flag['code_init_flag'] += 1
                 last_issue_obj.save()
                 self._webhook_return_data[
-                    'msg'] = f"所有代码升级成功，升级工单 {current_summary} 触发转换 <代码升级成功> 到状态 <UAT升级完成>"
+                    'msg'] = f"所有代码升级成功，升级工单 {current_summary} 触发转换 <代码升级成功> 到状态 <UAT UPGRADED>"
                 self._webhook_return_data['data'] = {"已升级信息列表": upgrade_info_list}
                 # 升级结果发送邮件
                 global sql_upgrade_flag
@@ -732,17 +735,37 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 print(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
                 jira_obj.change_transition(current_issue_key, '代码升级成功')
             else:
-                last_issue_obj.status = '代码升级失败'
+                last_issue_obj.status = 'CODE PROCESSING FAILED'
                 last_issue_obj.code_info = upgrade_success_list
                 last_issue_obj.init_flag['code_init_flag'] += 1
                 last_issue_obj.save()
                 self._webhook_return_data['status'] = False
                 self._webhook_return_data[
-                    'msg'] = f"代码升级失败，升级工单 {current_summary} 触发转换 <代码升级失败> 到状态 <开发/运维修改>"
+                    'msg'] = f"代码升级失败，升级工单 {current_summary} 触发转换 <代码升级失败> 到状态 <FIX PENDING>"
                 # self._webhook_return_data['data'] = current_issue_data
                 jira_obj.change_transition(current_issue_key, '代码升级失败')
         except Exception as err:
+            # 抛异常时记录 code 升级次数，确保下次升级使用 Jira 中数据而不是 DB 中初始化的升级数据
+            last_issue_obj.status = 'CODE PROCESSING FAILED'
+            last_issue_obj.init_flag['code_init_flag'] += 1
+            last_issue_obj.save()
             self._webhook_return_data['status'] = False
-            self._webhook_return_data['msg'] = f"<CODE执行中> 状态 webhook 触发失败，异常原因：{err.__str__()}"
+            self._webhook_return_data['msg'] = f"<CODE PROCESSING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
             jira_obj.change_transition(current_issue_key, '代码升级失败')
+        return self._webhook_return_data
+
+    def updated_event_modify(self, current_issue_key: str):
+        """
+        <FIX PENDING> 状态，触发重新升级
+        """
+        current_issue_key = current_issue_key
+
+        try:
+            jira_obj.change_transition(current_issue_key, '重新提交UAT迭代升级')
+            self._webhook_return_data['msg'] = f"<FIX PENDING> 状态 webhook 触发成功，重新提交UAT迭代升级"
+            return self._webhook_return_data
+
+        except Exception as err:
+            self._webhook_return_data['status'] = False
+            self._webhook_return_data['msg'] = f"<FIX PENDING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
         return self._webhook_return_data

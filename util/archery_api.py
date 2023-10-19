@@ -187,7 +187,7 @@ class ArcheryAPI(object):
                     'group_id': group_id,                               # 资源组id
                     'instance': instance_id,                            # 实例ID
                     'db_name': db_name,                                 # 数据库名
-                    'is_backup': args.get('is_backup',True),            # 是否备份
+                    'is_backup': args.get('is_backup', False),          # 是否备份
                     'engineer': args.get('engineer','admin'),           # 发起人
                 },
             }
