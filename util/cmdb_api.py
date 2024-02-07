@@ -5,6 +5,7 @@ try:
     from getconfig import GetYamlConfig
 except:
     from util.getconfig import GetYamlConfig
+from typing import Dict, List, Union, Any, Tuple
 
 __all__ = ['CmdbAPI']
 
@@ -22,8 +23,39 @@ class CmdbAPI:
             'access-token': self.token,
         }
 
-    def generate_project_info(self, svn_path, tag=None):
-        pass
+    def search_info(self,
+                    svn_path: str = None,
+                    ) -> Dict:
+        return_data = {
+            'status': True,
+            'msg': '',
+            'data': dict()
+        }
+        try:
+            svn_path = svn_path.lower()
+            data = {
+                "page": 1,
+                "size": 50,
+                "svn_path": svn_path,
+            }
+            if svn_path.startswith('/'): svn_path = svn_path[1:]
+            cmdb_req = requests.get(url=self.search_url, data=json.dumps(data), headers=self.headers)
+            assert cmdb_req.status_code == 200, 'cmdb interface returns status code is not 200!'
+
+            # get information by cmdb
+            cmdb_result = cmdb_req.json()
+            project_name = [ x['project']['name'] for x in cmdb_result['data']['items']if 'UAT' not in x['project']['name'] ][0]
+            project_version = [ x['arg'] for x in cmdb_result['data']['items'] if 'UAT' not in x['project']['name'] ][0]
+
+            return_data['msg'] = 'cmdb search prod project info success.'
+            return_data['data'] = {
+                'project_name': project_name,
+                'project_version': project_version
+            }
+        except Exception as err:
+            return_data['status'] = False
+            return_data['msg'] = err.__str__()
+        return return_data
 
     def search_project(self,svn_path=None,env=None,tag=None):
         if svn_path is None or env is None:

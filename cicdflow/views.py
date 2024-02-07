@@ -301,7 +301,10 @@ class CICDFlowView(APIView):
                     'B01',
                     'TCBS',
                     'ISLOT',
-                    'GGK'
+                    'GGK',
+                    'FPB',
+                    'PSLOT',
+                    'IS01'
                 ]
                 current_project = cicdflow_ser_data['project']
                 if current_project in ac_project_list:
@@ -314,7 +317,7 @@ class CICDFlowView(APIView):
                 current_summary = cicdflow_ser_data.get('summary')
                 jira_issue_obj_exists = JiraWorkflow.objects.filter(summary=current_summary)
 
-                # 工单标题已存在，更新 Jira 工单并转换状态到 <UAT自动迭代升级> 进行迭代升级
+                # 工单标题已存在，更新 Jira 工单并转换状态到 <StartUpgradeAgain> 进行迭代升级
                 if jira_issue_obj_exists:
                     jira_issue_obj = jira_issue_obj_exists.get()
                     issue_key = jira_issue_obj.issue_key
@@ -322,14 +325,14 @@ class CICDFlowView(APIView):
                     # 判断 issue 状态是否为 <SQL PENDING> 或 <UAT UPGRADED>，非此状态抛出异常，不允许更新 issue 数据
                     if issue_status in ['UAT UPGRADED']:
                         d_logger.debug(f"工单：{current_summary} 状态为 <UAT UPGRADED>，正常流转流程")
-                        trans_result = jira_api_obj.change_transition(issue_key, 'UAT自动迭代升级')
+                        trans_result = jira_api_obj.change_transition(issue_key, 'StartUpgradeAgain')
                         if not trans_result['status']:
                             return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{trans_result['data']}"
                             d_logger.warning(return_data)
                         # 从 <UAT UPGRADED> 状态变更，开始迭代升级
                         else:
                             return_data['status'] = True
-                            return_data['msg'] = '已存在 Jira 工单，转换工单状态到<UAT自动迭代升级>，开始完整迭代升级流程。'
+                            return_data['msg'] = '已存在 Jira 工单，转换工单状态到<StartUpgradeAgain>，开始完整迭代升级流程。'
                             return_data['jira_issue_key'] = issue_key
                             d_logger.info(return_data)
                     # SQL PENDING 状态数据有变化时会自动触发 webhook，无需人为调用 change_transition 方法变更状态
@@ -343,7 +346,7 @@ class CICDFlowView(APIView):
                         return_data['msg'] = f"工单：{current_summary} 状态为 <CODE PROCESSING FAILED> 或 <FIX PENDING>，开始完整迭代升级流程"
                         return_data['jira_issue_key'] = issue_key
                         jira_api_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
-                        jira_api_obj.change_transition(issue_key, '重新提交UAT迭代升级')
+                        jira_api_obj.change_transition(issue_key, 'StartUpgradeAgain')
                         d_logger.info(return_data)
                         return Response(data=return_data, status=status.HTTP_200_OK)
                     else:
@@ -387,6 +390,7 @@ class CICDFlowView(APIView):
             return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err.__str__()}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 # Jira 升级自动化流程
 class JiraFlowView(APIView):
@@ -500,3 +504,58 @@ class JiraFlowView(APIView):
             }
             d_logger.error(f"{msg}")
             return Response(status=status.HTTP_400_BAD_REQUEST)
+
+
+class CheckVersion(APIView):
+    def get(self, request, *args, **kwargs):
+        return_data = {
+            'code': 10200,
+            'msg': 'PROD UPGRADED',
+            'data': list()
+        }
+        try:
+            summary = request.GET.get('summary')
+            assert summary, '参数必选项 summary 参数缺失，工单编号名称为必需值'
+
+            # 获取工单实例
+            jira_obj = JiraWorkflow.objects.get(summary=summary)
+            from util.cmdb_api import CmdbAPI
+            cmdb = CmdbAPI()
+
+            # 判断工单状态
+            upgrade_status = jira_obj.status
+            assert upgrade_status=='UAT UPGRADED', '当前 UAT 升级工单状态非 <UAT UPGRADED> 状态'
+
+            # 获取升级版本数据判断
+            all_code_info_list = jira_obj.code_info
+            code_info_list = [x for x in all_code_info_list if 'uat' not in x['svn_path']]
+
+            tmp_data = list()
+            tmp_dict = dict()
+            for code_info in code_info_list:
+                cmdb_info_dict = cmdb.search_info(code_info['svn_path'])
+                assert cmdb_info_dict['status'], '从 CMDB 获取线上数据失败！'
+
+                tmp_dict['project_name'] = cmdb_info_dict['data']['project_name']
+                tmp_dict['uat_tag'] = code_info['tag']
+                tmp_dict['uat_version'] = code_info['svn_version']
+                tmp_dict['prod_version'] = cmdb_info_dict['data']['project_version']
+                tmp_data.append(tmp_dict)
+
+            # 线上版本与当前 UAT 版本不一致
+            prod_flag = [x for x in tmp_data if x['uat_version'] == x['prod_version']]
+            if len(prod_flag) != len(tmp_data):
+                return_data['code'] = 10209
+                return_data['msg'] = 'UAT and PROD version are inconsistent'
+
+            return_data['data'] = tmp_data
+        except AssertionError as err:
+            return_data['code'] = 10500
+            return_data['msg'] = f"{err.__str__()}"
+        except (JiraWorkflow.DoesNotExist, SqlWorkflow.DoesNotExist) as err:
+            return_data['code'] = 10404
+            return_data['msg'] = f"工单编号数据不存在，错误内容：{err.__str__()}"
+        except Exception as err:
+            return_data['code'] = 10500
+            return_data['msg'] = f"接口异常，异常原因： {err.__str__()}"
+        return Response(data=return_data, status=status.HTTP_200_OK)

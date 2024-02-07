@@ -72,8 +72,9 @@ def get_sql_commit_data(
 
         # 提交 sql 序号，顺序执行 sql
         seq_index = current_sql_info.index(sql_data) + 1
-        # DB 所属资源组名称：A18 ｜ A19 ｜ QC
+        # DB 所属资源组名称：A18 ｜ A19 ｜ QC | ISLOT
         svn_path_up = svn_path.upper()
+        db_name = None
         ### yakir_test
         if 'yakir' in svn_file:
             sql_resource_name = 'QC'
@@ -81,7 +82,7 @@ def get_sql_commit_data(
             table_catalog = 'dbtest'
             bk_sql_content_value = get_backup_commit_data(table_catalog, sql_content_value)
             bk_commit_data = {
-                'sql_index': int(seq_index),
+                'sql_index': str(seq_index),
                 'sql_release_info': str(svn_version),
                 'sql': bk_sql_content_value,
                 'workflow_name': f"{current_summary}_备份工单",
@@ -99,7 +100,9 @@ def get_sql_commit_data(
                 'rex_admin': 'qc-admin',
                 'rex_rpt': 'qc-report',
                 'rex_merchant_b01': 'b01_merchant',
-                'rex_merchant_rs8': 'rs8_merchant'
+                'rex_merchant_rs8': 'rs8_merchant',
+                'rex_merchant_fpb': 'fpb_merchant',
+                'rex_merchant_psl': 'psl_merchant'
             }
             sql_resource_name = re.split(r'[/_]\s*', svn_path_up)[2]
             qc_ins_key = svn_path.split('/')[-1]
@@ -108,30 +111,44 @@ def get_sql_commit_data(
             # 备份库 SQL 信息获取
             bk_sql_content_value = get_backup_commit_data(sql_instance_name, sql_content_value)
             bk_commit_data = {
-                'sql_index': int(seq_index),
+                'sql_index': str(seq_index),
                 'sql_release_info': str(svn_version),
                 'sql': bk_sql_content_value,
                 'workflow_name': f"{current_summary}_备份工单",
                 'resource_tag': sql_resource_name,
                 'instance_tag': sql_instance_name
             } if bk_sql_content_value else None
-        elif 'ISLOT' in svn_path_up:
+        elif 'islot' in svn_path:
             sql_resource_name = svn_path.split('/')[1].upper()
-            sql_instance_name = svn_path.split('/')[1]
+            sql_instance_name = 'islot-uat'
+            db_name = 'ilum01'
+            if 'liveslot-sql-hotfix' in svn_path:
+                db_name = 'hotfix'
+            elif 'liveslot-sql-v2' in svn_path:
+                #db_name = 'ilum02'
+                db_name = 'hotfix'
+            elif 'liveslot-sql-v3' in svn_path:
+                db_name = 'ilum03'
             bk_commit_data = None
-        elif 'GGK' in svn_path_up:
+        elif 'ggk' in svn_path:
             sql_resource_name = 'GGK'
             sql_instance_name = 'ggk-uat'
+            bk_commit_data = None
+        elif 'isagent' in svn_path:
+            sql_resource_name = 'ISLOT'
+            sql_instance_name = 'isagnet-uat'
+            db_name = ''
             bk_commit_data = None
         else:
             raise ValueError("svn 路径不包含 ac 或 qc 关键字路径，请确认是否正确输入 svn 路径")
         commit_data = {
-            'sql_index': int(seq_index),
+            'sql_index': str(seq_index),
             'sql_release_info': str(svn_version),
             'sql': sql_content_value,
             'workflow_name': current_summary,
             'resource_tag': sql_resource_name,
-            'instance_tag': sql_instance_name
+            'instance_tag': sql_instance_name,
+            'db_name': db_name
         }
         return commit_data, bk_commit_data
     else:
@@ -230,7 +247,7 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
             else:
                 print(fail_msg)
                 retry_flag = 0
-                # 代码升级失败重试机制，等待10s重试2次升级
+                # CodeUpgradeFailed重试机制，等待10s重试2次升级
                 while retry_flag < 2:
                     print(fail_msg)
                     sleep(10)
@@ -284,11 +301,11 @@ class JiraEventWebhookAPI(JiraWebhookData):
             serializer.save()
             # 判断是否有 SQL 升级数据：触发进入下一步流程
             if not current_sql_info:
-                self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单无SQL升级数据，触发转换 <无SQL升级/已升级> 到状态 <CONFIG PROCESSING>"
-                jira_obj.change_transition(current_issue_key, '无SQL升级/已升级')
+                self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单无SQL升级数据，触发转换 <NoSqlUpgrade/AlreadyUpgrade> 到状态 <CONFIG PROCESSING>"
+                jira_obj.change_transition(current_issue_key, 'NoSqlUpgrade/AlreadyUpgrade')
             else:
-                self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单有SQL升级数据，触发转换 <触发提交SQL> 到状态 <SQL PENDING>"
-                jira_obj.change_transition(current_issue_key, '触发提交SQL')
+                self._webhook_return_data['msg'] = f"Jira工单被创建，工单名：{current_summary}，工单有SQL升级数据，触发转换 <触发SubmitSQL> 到状态 <SQL PENDING>"
+                jira_obj.change_transition(current_issue_key, 'TriggerSubmitSQL')
         except Exception as err:
             self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = err.__str__()
@@ -329,9 +346,9 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 last_issue_obj.status = 'CONFIG PROCESSING'
                 last_issue_obj.init_flag['sql_init_flag'] += 1
                 last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, '无SQL升级/已升级')
+                jira_obj.change_transition(current_issue_key, 'NoSqlUpgrade/AlreadyUpgrade')
                 self._webhook_return_data[
-                    'msg'] = f"SQL 升级数据为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG PROCESSING>"
+                    'msg'] = f"SQL 升级数据为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <NoSqlUpgrade/AlreadyUpgrade> 到状态 <CONFIG PROCESSING>"
                 return self._webhook_return_data
 
             # Jira 的 sql_info 数据中对比当前所有需要提交 SQL 工单是否已全部存入 SqlWorkflow 表中
@@ -341,9 +358,9 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 last_issue_obj.status = 'CONFIG PROCESSING'
                 last_issue_obj.init_flag['sql_init_flag'] += 1
                 last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, '无SQL升级/已升级')
+                jira_obj.change_transition(current_issue_key, 'NoSqlUpgrade/AlreadyUpgrade')
                 self._webhook_return_data[
-                    'msg'] = f"SQL 升级已在 UAT 环境执行，无需重复执行。升级工单 {current_summary} 触发转换 <无SQL升级/已升级> 到状态 <CONFIG PROCESSING>"
+                    'msg'] = f"SQL 升级已在 UAT 环境执行，无需重复执行。升级工单 {current_summary} 触发转换 <NoSqlUpgrade/AlreadyUpgrade> 到状态 <CONFIG PROCESSING>"
                 return self._webhook_return_data
 
             # 轮循当前 sql_info 数据，根据 has_deploy_uat 值判断是否需要提交 SQL
@@ -410,8 +427,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
             last_issue_obj.sql_info = current_sql_info
             last_issue_obj.init_flag['sql_init_flag'] += 1
             if len(commit_sql_list) == len(commit_success_list):
-                self._webhook_return_data['msg'] = f"所有待执行 SQL 提交成功，升级工单 {current_summary} 触发转换 <提交SQL> 到状态 <SQL PROCESSING>"
-                jira_obj.change_transition(current_issue_key, '提交SQL')
+                self._webhook_return_data['msg'] = f"所有待执行 SQL 提交成功，升级工单 {current_summary} 触发转换 <SubmitSQL> 到状态 <SQL PROCESSING>"
+                jira_obj.change_transition(current_issue_key, 'SubmitSQL')
             else:
                 self._webhook_return_data['status'] = False
                 self._webhook_return_data['msg'] = f"存在待执行 SQL 工单提交失败，升级工单 {current_summary} 保持 <SQL PENDING> 状态等待修复"
@@ -500,7 +517,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     if not audit_result['status']:
                         self._webhook_return_data['status'] = False
                         self._webhook_return_data['msg'] = f"工单 {current_summary} 有 SQL 自动审核失败，失败原因：{audit_result['data']}"
-                        jira_obj.change_transition(current_issue_key, 'SQL升级失败')
+                        jira_obj.change_transition(current_issue_key, 'SQLUpgradeFailed')
                         break
                     audit_ins.w_status = 'workflow_review_pass'
                 else:
@@ -511,7 +528,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             if audit_sql_obj:
                 self._webhook_return_data['status'] = False
                 self._webhook_return_data['msg'] = f"工单 {current_summary} 自动审核正常结束，但存在有非 <审核通过> 状态的工单"
-                jira_obj.change_transition(current_issue_key, 'SQL升级失败')
+                jira_obj.change_transition(current_issue_key, 'SQLUpgradeFailed')
                 return self._webhook_return_data
 
             # 获取 SqlWorkflow 表中所有审核通过状态的 SQL 工单
@@ -544,7 +561,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     self._webhook_return_data['status'] = False
                     self._webhook_return_data[
                         'msg'] = f"工单 {current_summary}  SQL 调用 archery 执行 SQL 接口失败，失败原因：{execute_result['data']}"
-                    jira_obj.change_transition(current_issue_key, 'SQL升级失败')
+                    jira_obj.change_transition(current_issue_key, 'SQLUpgradeFailed')
                     break
                 # 成功执行后等待15s，否则工单可能为 workflow_queuing 状态。等待后再次查询状态，不成功终止后续 SQL 自动执行
                 sleep(15)
@@ -557,7 +574,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     self._webhook_return_data['status'] = False
                     self._webhook_return_data[
                         'msg'] = f"工单 {current_summary}  存在执行结果为异常的 SQL，失败原因：{execute_result['data']}"
-                    jira_obj.change_transition(current_issue_key, 'SQL升级失败')
+                    jira_obj.change_transition(current_issue_key, 'SQLUpgradeFailed')
                     break
             # 自动执行结束，核实是否还存在 workflow_review_pass 状态工单
             if execute_sql_obj:
@@ -584,8 +601,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
             # SQL 升级成功，转换 Jira 工单状态
             self._webhook_return_data[
-                'msg'] = f"升级工单 {current_summary} 所有 SQL 执行成功，触发转换 <SQL升级成功> 到状态 <CONFIG PROCESSING>"
-            jira_obj.change_transition(current_issue_key, 'SQL升级成功')
+                'msg'] = f"升级工单 {current_summary} 所有 SQL 执行成功，触发转换 <SQLUpgradeSuccessful> 到状态 <CONFIG PROCESSING>"
+            jira_obj.change_transition(current_issue_key, 'SQLUpgradeSuccessful')
         except AssertionError as err:
             self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = err.__str__()
@@ -669,16 +686,16 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 last_issue_obj.init_flag['code_init_flag'] += 1
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, '无代码升级/已升级')
+                jira_obj.change_transition(current_issue_key, 'NoCodeUpgrade/AlreadyUpgrade')
                 self._webhook_return_data[
-                    'msg'] = f"代码升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <无代码升级/已升级> 到状态 <UAT UPGRADED>"
+                    'msg'] = f"代码升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <NoCodeUpgrade/AlreadyUpgrade> 到状态 <UAT UPGRADED>"
                 return self._webhook_return_data
 
             # current_code_info 数据调整
             for item in current_code_info:
                 if item['tag'] == '':
                     item['tag'] = 'v1'
-            # 初始化迭代升级代码数据
+            # 初始化迭代升级代码数据，判断是否为首次升级
             if code_init_flag:
                 # 待升级的 code_info 数据
                 wait_upgrade_list = compare_list_info(last_code_info, current_code_info)
@@ -689,9 +706,9 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     last_issue_obj.status = 'UAT UPGRADED'
                     last_issue_obj.init_flag['code_init_flag'] += 1
                     last_issue_obj.save()
-                    jira_obj.change_transition(current_issue_key, '无代码升级/已升级')
+                    jira_obj.change_transition(current_issue_key, 'NoCodeUpgrade/AlreadyUpgrade')
                     self._webhook_return_data[
-                        'msg'] = f"代码迭代升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <无代码升级/已升级> 到状态 <UAT UPGRADED>"
+                        'msg'] = f"代码迭代升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <NoCodeUpgrade/AlreadyUpgrade> 到状态 <UAT UPGRADED>"
                     return self._webhook_return_data
             # 初始化首次升级代码数据
             else:
@@ -713,7 +730,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # current_code_info 数据调整
             current_code_info = [{k: v for k, v in d.items() if k != 'env'} for d in current_code_info]
 
-            # 只有全部升级成功才转换为<代码升级成功>，只要有失败的升级就转换为<代码升级失败>
+            # 只有全部升级成功才转换为<CodeUpgradeSuccessful>，只要有失败的升级就转换为<CodeUpgradeFailed>
             if upgrade_success_list == current_code_info or not compare_list_info(
                     upgrade_success_list,
                     current_code_info):
@@ -722,7 +739,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 last_issue_obj.init_flag['code_init_flag'] += 1
                 last_issue_obj.save()
                 self._webhook_return_data[
-                    'msg'] = f"所有代码升级成功，升级工单 {current_summary} 触发转换 <代码升级成功> 到状态 <UAT UPGRADED>"
+                    'msg'] = f"所有CodeUpgradeSuccessful，升级工单 {current_summary} 触发转换 <CodeUpgradeSuccessful> 到状态 <UAT UPGRADED>"
                 self._webhook_return_data['data'] = {"已升级信息列表": upgrade_info_list}
                 # 升级结果发送邮件
                 global sql_upgrade_flag
@@ -733,7 +750,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     # print(f'工单 {current_summary} 本次无 SQL 升级')
                     pass
                 print(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
-                jira_obj.change_transition(current_issue_key, '代码升级成功')
+                jira_obj.change_transition(current_issue_key, 'CodeUpgradeSuccessful')
             else:
                 last_issue_obj.status = 'CODE PROCESSING FAILED'
                 last_issue_obj.code_info = upgrade_success_list
@@ -741,9 +758,9 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 last_issue_obj.save()
                 self._webhook_return_data['status'] = False
                 self._webhook_return_data[
-                    'msg'] = f"代码升级失败，升级工单 {current_summary} 触发转换 <代码升级失败> 到状态 <FIX PENDING>"
+                    'msg'] = f"CodeUpgradeFailed，升级工单 {current_summary} 触发转换 <CodeUpgradeFailed> 到状态 <FIX PENDING>"
                 # self._webhook_return_data['data'] = current_issue_data
-                jira_obj.change_transition(current_issue_key, '代码升级失败')
+                jira_obj.change_transition(current_issue_key, 'CodeUpgradeFailed')
         except Exception as err:
             # 抛异常时记录 code 升级次数，确保下次升级使用 Jira 中数据而不是 DB 中初始化的升级数据
             last_issue_obj.status = 'CODE PROCESSING FAILED'
@@ -751,7 +768,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             last_issue_obj.save()
             self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = f"<CODE PROCESSING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
-            jira_obj.change_transition(current_issue_key, '代码升级失败')
+            jira_obj.change_transition(current_issue_key, 'CodeUpgradeFailed')
         return self._webhook_return_data
 
     def updated_event_modify(self, current_issue_key: str):
@@ -761,8 +778,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
         current_issue_key = current_issue_key
 
         try:
-            jira_obj.change_transition(current_issue_key, '重新提交UAT迭代升级')
-            self._webhook_return_data['msg'] = f"<FIX PENDING> 状态 webhook 触发成功，重新提交UAT迭代升级"
+            jira_obj.change_transition(current_issue_key, 'StartUpgradeAgain')
+            self._webhook_return_data['msg'] = f"<FIX PENDING> 状态 webhook 触发成功，StartUpgradeAgain"
             return self._webhook_return_data
 
         except Exception as err:

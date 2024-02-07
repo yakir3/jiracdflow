@@ -17,7 +17,8 @@ def uat_delete_account_data(
         instance_tag: str = None,
         workflow_name: str = 'UAT_QC_删除第三方测试账号数据',
         resource_tag: str = 'QC',
-    ) -> Union[Dict, str]:
+        db_name: str = 'bwupxx'
+) -> Union[Dict, str]:
     try:
         # 生成删除 sql 语句
 #         delete_sql_content = f"""DELETE FROM stu
@@ -49,7 +50,8 @@ WHERE rc.merchant_id = '{merchant_id}' and rc.login_name IN ({username_str});
             'sql': delete_sql_content,
             'workflow_name': workflow_name,
             'resource_tag': resource_tag,
-            'instance_tag': instance_tag
+            'instance_tag': instance_tag,
+            'db_name': db_name
         }
         commit_res = archery_obj.commit_workflow(commit_data)
         # 提交工单失败直接返回，不继续审核 & 执行流程
@@ -94,6 +96,7 @@ def uat_truncate_agent(
         instance_tag: str = None,
         workflow_name: str = 'UAT_QC_删除代理佣金数据',
         resource_tag: str = 'QC',
+        db_name: str = 'bwupxx'
 ) -> Union[Dict, str]:
     try:
         delete_sql_content = f"""
@@ -122,7 +125,8 @@ update r_agent_ext_config set cpa_remaining_amount = 0 where id != 1;
             'sql': delete_sql_content,
             'workflow_name': workflow_name,
             'resource_tag': resource_tag,
-            'instance_tag': instance_tag
+            'instance_tag': instance_tag,
+            'db_name': db_name
         }
         commit_res = archery_obj.commit_workflow(commit_data)
         # 提交工单失败直接返回，不继续审核 & 执行流程
@@ -177,12 +181,22 @@ if __name__ == '__main__':
     merchant_id_dict = {
         'QC': 'qc-merchant',
         'B01': 'b01_merchant',
-        'RS8': 'rs8_merchant'
+        'RS8': 'rs8_merchant',
+        'FPB': 'fpb_merchant',
+        'PSL': 'psl_merchant'
+    }
+    db_name_dict = {
+        'QC': 'bwup01',
+        'B01': 'bwup03',
+        'RS8': 'bwup04',
+        'FPB': 'bwup99',
+        'PSL': 'bwup99'
     }
     if merchant_id_parameter not in merchant_id_dict.keys():
         print('product 参数不在当前已有的产品列表中，请确认！！！')
         sys.exit(111)
     instance_tag = merchant_id_dict[merchant_id_parameter]
+    db_name = db_name_dict[merchant_id_parameter]
 
     # 删除第三方测试账号
     if operate == 'uat_delete_account_data':
@@ -192,11 +206,11 @@ if __name__ == '__main__':
             sys.exit(111)
         user_str = ", ".join("'" + item + "'" for item in jenkins_user_parameter.split(','))
         # 处理逻辑函数
-        res = uat_delete_account_data(user_str, merchant_id_parameter, instance_tag=instance_tag)
+        res = uat_delete_account_data(user_str, merchant_id_parameter, instance_tag=instance_tag, db_name=db_name)
         print(res)
     # 删除代理后台佣金数据
     elif operate == 'uat_truncate_agent':
-        res = uat_truncate_agent(instance_tag=instance_tag)
+        res = uat_truncate_agent(instance_tag=instance_tag, db_name=db_name)
         print(res)
     else:
         print('未允许的操作，请重试!')

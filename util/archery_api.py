@@ -152,7 +152,7 @@ class ArcheryAPI(object):
         except Exception as e:
             return {'status': False, 'msg': '查询实例信信息异常', 'data': e}
 
-    def commit_workflow(self,args: Dict=dict):
+    def commit_workflow(self, args: Dict=dict):
         if not args['sql']:
             return {'status':False,'msg':'args[sql] is None','data':''}
         try:
@@ -166,7 +166,11 @@ class ArcheryAPI(object):
             #查询 instance_id / db_name
             instance_info = self.get_instances(instance_name=args['instance_tag'])
             if instance_info['status']:
-                db_name = instance_info['data'][args['instance_tag']]['db_name']
+                # 单实例多数据库时判断是否传 db_name
+                if args['db_name']:
+                    db_name = args['db_name']
+                else:
+                    db_name = instance_info['data'][args['instance_tag']]['db_name']
                 instance_id = instance_info['data'][args['instance_tag']]['id']
             else:
                 return {'status':False,'msg':instance_info['msg'],'data':instance_info['data']}
@@ -178,7 +182,7 @@ class ArcheryAPI(object):
             #     return {'status': False, 'msg': 'sql_index 或 sql_release_info 值不能为空或 None，请重试', 'data': ''}
 
             data = {
-                'sql_content': args['sql'], #sql *
+                'sql_content': args['sql'],                             # sql content
                 'workflow':{
                     'sql_index': sql_index,                             # 工单SQL执行序号
                     'sql_release_info': sql_release_info,               # 工单SQL版本信息

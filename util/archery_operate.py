@@ -11,6 +11,10 @@ archery_config = GetYamlConfig().get_config('Archery')
 
 __all__ = ['ArcheryAPI']
 
+_url_list = {
+
+}
+
 class ArcheryAPI(object):
     """ Archery 实例，使用 requests 模块调用接口提交、查询 SQL 工单等
 
@@ -95,6 +99,30 @@ class ArcheryAPI(object):
             self.return_data['workflow_name'] = workflow_name
             self.return_data['msg'] = f"提交 SQL 工单到 Archery 异常，错误信息：{err}"
             return self.return_data
+
+    def get_instance_info(
+            self
+    ) -> Dict:
+        """ 获取实例清单
+        Args:
+            ...
+        Returns:
+            Dict: return_data
+        """
+        try:
+            token = "Bearer " + self._get_token().pop('token')
+            self.headers = {'Authorization': token}
+            data = {
+                'size': 100,  # 查询实例数量
+            }
+            instance_url = 'https://uat-archery-api.opsre.net/api/v1/instance/'
+            request_result = requests.get(url=instance_url, params=data, headers=self.headers)
+            assert request_result.ok, "提交 SQL 工单响应结果非200."
+
+            return request_result.json()
+        except Exception as err:
+            print(err.__str__())
+            return 'False'
 
 if __name__ == '__main__':
     print(archery_config['schema'])
