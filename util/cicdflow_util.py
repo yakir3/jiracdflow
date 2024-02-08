@@ -136,8 +136,15 @@ def get_sql_commit_data(
             bk_commit_data = None
         elif 'isagent' in svn_path:
             sql_resource_name = 'ISLOT'
-            sql_instance_name = 'isagnet-uat'
-            db_name = ''
+            if 'isagent-merchant' in svn_path:
+                sql_instance_name = 'isagnet-merchant'
+                db_name = 'ilup01'
+            elif 'isagent-admin' in svn_path:
+                sql_instance_name = 'isagnet-admin'
+                db_name = 'ilup02'
+            elif 'isagent-report' in svn_path:
+                sql_instance_name = 'isagnet-report'
+                db_name = 'ilup03'
             bk_commit_data = None
         else:
             raise ValueError("svn 路径不包含 ac 或 qc 关键字路径，请确认是否正确输入 svn 路径")
@@ -696,6 +703,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 if item['tag'] == '':
                     item['tag'] = 'v1'
             # 初始化迭代升级代码数据，判断是否为首次升级
+            # 非首次升级代码
             if code_init_flag:
                 # 待升级的 code_info 数据
                 wait_upgrade_list = compare_list_info(last_code_info, current_code_info)
@@ -710,7 +718,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     self._webhook_return_data[
                         'msg'] = f"代码迭代升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <NoCodeUpgrade/AlreadyUpgrade> 到状态 <UAT UPGRADED>"
                     return self._webhook_return_data
-            # 初始化首次升级代码数据
+            # 首次升级代码
             else:
                 # 待升级的 code_info 数据
                 wait_upgrade_list = last_code_info
@@ -721,15 +729,57 @@ class JiraEventWebhookAPI(JiraWebhookData):
             upgrade_info_list = []
 
             # 升级代码主逻辑
-            start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f'开始升级代码，开始时间：{start_time}')
-            upgrade_success_list, upgrade_info_list = thread_upgrade_code(wait_upgrade_list, upgrade_success_list, upgrade_info_list)
-            end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f'代码升级结束，结束时间：{end_time}')
+            if 'IS01' in current_summary:
+                start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f'开始升级代码，开始时间：{start_time}')
+                # 写死 isagent 应用 id 信息
+                id_map = {
+                    'backend-isagent-admin': 789,
+                    'backend-isagent-agent': 788,
+                    'backend-isagent-cms': 790,
+                    'backend-isagent-common': 793,
+                    'backend-isagent-game': 792,
+                    'backend-isagent-gateway': 796,
+                    'backend-isagent-prom': 791,
+                    'backend-isagent-report': 795,
+                    'backend-isagent-task': 794,
+                    'backend-isagent-user': 797,
+                    'frontend-isagent-admin-web': 785,
+                    'frontend-isagent-agent-web': 787,
+                    'frontend-isagent-web': 786,
+                }
+                branch_map = {
+                    'v1': 'release_uat_1',
+                    'v2': 'release_uat_2',
+                    'v3': 'release_uat_3'
+                }
+                for wait_upgrade_ins in wait_upgrade_list:
+                    print(wait_upgrade_ins)
+                    project_name = wait_upgrade_ins['project_name']
+                    project_tag = wait_upgrade_ins['tag']
+                    # 提交的数据转换为数据代码所需数据
+                    pid = id_map[project_name]
+                    branch = branch_map[project_tag]
+                    code_version = wait_upgrade_ins['code_version']
+                    # 调用 cmdb upgrade_v2 方法升级
+                    cmdb_obj = CmdbAPI()
+                    upgrade_result = cmdb_obj.upgrade_v2(pid, branch, project_name, code_version)
+                    if upgrade_result['status']:
+                        upgrade_success_list.append(upgrade_result['data'])
+                        upgrade_info_list.append(upgrade_result['data']['project_name'])
+                end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f'代码升级结束，结束时间：{end_time}')
+            else:
+                start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f'开始升级代码，开始时间：{start_time}')
+                upgrade_success_list, upgrade_info_list = thread_upgrade_code(wait_upgrade_list, upgrade_success_list, upgrade_info_list)
+                end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f'代码升级结束，结束时间：{end_time}')
 
             # current_code_info 数据调整
             current_code_info = [{k: v for k, v in d.items() if k != 'env'} for d in current_code_info]
 
+            # print(upgrade_success_list)
             # 只有全部升级成功才转换为<CodeUpgradeSuccessful>，只要有失败的升级就转换为<CodeUpgradeFailed>
             if upgrade_success_list == current_code_info or not compare_list_info(
                     upgrade_success_list,

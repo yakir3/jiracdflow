@@ -16,6 +16,7 @@ class CmdbAPI:
     def __init__(self, config=cmdb_config):
         self.search_url = config.get('search_url')
         self.upgrade_url = config.get('upgrade_url')
+        self.upgrade_v2_url = config.get('upgrade_v2_url')
         self.domain = config.get('domain')
         self.token = config.get('token')
         self.headers = {
@@ -128,7 +129,7 @@ class CmdbAPI:
         except Exception as e:
             return {'status':False,'msg':'升级工程报错','data':e}
 
-    def upgrade(self,svn_path=None,svn_version=None,tag=None, env='UAT'):
+    def upgrade(self, project_name=None, code_version=None, svn_path=None, svn_version=None, tag=None, env='UAT'):
         if svn_path is None or svn_version is None:
             return {'status': False,'msg':'upgrade_project: svn_path or version is None!'}
 
@@ -137,17 +138,33 @@ class CmdbAPI:
         real_tag = 'v1' if tag is None or tag == '' else tag
 
         # 返回升级的代码升级信息
-        code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': real_tag}
+        #code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': real_tag}
+        code_data = {
+            'svn_path': svn_path,
+            'svn_version': svn_version,
+            'tag': real_tag,
+            'project_name': project_name,
+            'code_version': code_version
+        }
 
         # svn 路径结尾 prod，不升级代码，直接返回成功
         if svn_path.endswith('prod') and env == 'UAT':
-            return {'status': True, 'msg': f"svn 路径{svn_path} 为运营环境 svn 路径，不升级代码", 'data': [{'project': "no_project"}], 'code_data': code_data}
+            return {
+                'status': True,
+                'msg': f"svn 路径{svn_path} 为运营环境 svn 路径，不升级代码",
+                'data': [{'project': "no_project"}],
+                'code_data': code_data
+            }
 
         # 版本号为空字符串时，不升级代码（只升级 SQL 或配置）
         if not svn_version:
             # code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': real_tag}
-            return {'status': True, 'msg': '不升级代码（升级工单只升级 SQL 或配置）', 'data': [{'project': None}], 'code_data': code_data}
-
+            return {
+                'status': True,
+                'msg': '不升级代码（升级工单只升级 SQL 或配置）',
+                'data': [{'project': None}],
+                'code_data': code_data
+            }
         try:
             projects_info = self.search_project(svn_path=svn_path,env=env,tag=tag)
             result_list = []
@@ -155,17 +172,54 @@ class CmdbAPI:
                 status = True
                 for project_data in projects_info['data']:
                     p_id = project_data['id']
-                    upgrade_res = self.upgrade_project(p_id,svn_version)
+                    upgrade_res = self.upgrade_project(p_id, svn_version)
                     upgrade_res = literal_eval(upgrade_res['data'])
                     i_status = upgrade_res['status']
                     if i_status != '成功': status = False
                     result_list.append(upgrade_res)
-                result = {'status':status,'msg':'升级完毕','data':result_list, 'code_data': code_data}
+                return {
+                    'status': status,
+                    'msg': '升级完毕',
+                    'data': result_list,
+                    'code_data': code_data
+                }
             else:
-                result = {'status':False,'msg':projects_info['msg'],'data':projects_info['data'], 'code_data': code_data}
-            return result
+                return {'status':False,'msg':projects_info['msg'],'data':projects_info['data'], 'code_data': code_data}
         except Exception as err:
             return {'status':False,'msg':'升级失败','data': err.__str__(), 'code_data': code_data}
+
+    def upgrade_v2(self, pid=None, branch=None, project_name=None, code_version=None):
+        branch_map = {
+            'release_uat_1': 'v1',
+            'release_uat_2': 'v2',
+            'release_uat_3': 'v3'
+        }
+        v2_return_data = {
+            "status": True,
+            "msg": "升级成功",
+            "data": {
+                "svn_path": None,
+                "svn_version": None,
+                "tag": branch_map[branch],
+                "project_name": project_name,
+                "code_version": code_version
+            }
+        }
+        try:
+            url = self.upgrade_v2_url + str(pid)
+            data = {
+                "id": pid,
+                "branch": branch,
+                "version": code_version,
+            }
+            res = requests.post(url=url, json=data, headers=self.headers)
+            if res.status_code != 200:
+                v2_return_data['status'] = False
+            return v2_return_data
+        except Exception as err:
+            v2_return_data['status'] = False
+            v2_return_data['msg'] = err.__str__()
+            return v2_return_data
 
 if __name__ == '__main__':
     pass

@@ -341,7 +341,7 @@ class CICDFlowView(APIView):
                         return_data['msg'] = f"工单：{current_summary} 状态为 <SQL PENDING> 或 <SQL PROCESSING FAILED>，重新提交 SQL 触发完整升级流程"
                         return_data['jira_issue_key'] = issue_key
                         d_logger.info(return_data)
-                    elif issue_status ['CODE PROCESSING FAILED', 'FIX PENDING']:
+                    elif issue_status in ['CODE PROCESSING FAILED', 'FIX PENDING']:
                         return_data['status'] = True
                         return_data['msg'] = f"工单：{current_summary} 状态为 <CODE PROCESSING FAILED> 或 <FIX PENDING>，开始完整迭代升级流程"
                         return_data['jira_issue_key'] = issue_key
