@@ -130,14 +130,15 @@ LOGGING = {
     # 格式器
     'formatters': {
         'verbose': {
-            'format': '[%(asctime)s][%(threadName)s:%(thread)d][task_id:%(name)s][%(filename)s:%(lineno)d]'
-                      '[%(levelname)s][%(message)s]'
+            'format': '%(asctime)s [%(threadName)s:%(thread)d][task_id:%(name)s][%(filename)s:%(lineno)d]'
+                      '[%(levelname)s] %(message)s'
         },
         'standard': {
-            'format': '[%(levelname)s][%(asctime)s][%(threadName)s:%(thread)d][%(filename)s:%(lineno)d]%(message)s'
+            #'format': '%(asctime)s [%(levelname)s][%(threadName)s:%(thread)d][%(filename)s:%(lineno)d]%(message)s'
+            'format': '%(asctime)s [%(levelname)s][%(filename)s:%(lineno)d] %(message)s'
         },
         'simple': {
-            'format': '[%(levelname)s][ %(message)s]'
+            'format': '%(asctime)s [%(levelname)s] %(message)s'
         },
     },
     # 过滤器
