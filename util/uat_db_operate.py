@@ -180,10 +180,10 @@ if __name__ == '__main__':
     # 判断产品是否在已有产品内，符合要求传入 merchant_id
     merchant_id_dict = {
         'QC': 'qc-merchant',
-        'B01': 'b01_merchant',
-        'RS8': 'rs8_merchant',
-        'FPB': 'fpb_merchant',
-        'PSL': 'psl_merchant'
+        'B01': 'b01-merchant',
+        'RS8': 'rs8-merchant',
+        'FPB': 'fpb-merchant',
+        'PSL': 'psl-merchant'
     }
     db_name_dict = {
         'QC': 'bwup01',

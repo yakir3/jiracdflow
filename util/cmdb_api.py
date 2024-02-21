@@ -188,7 +188,7 @@ class CmdbAPI:
         except Exception as err:
             return {'status':False,'msg':'升级失败','data': err.__str__(), 'code_data': code_data}
 
-    def upgrade_v2(self, pid=None, branch=None, project_name=None, code_version=None):
+    def upgrade_v2(self, pid=None, branch=None, project_name=None, code_version=None, svn_version=None):
         branch_map = {
             'release_uat_1': 'v1',
             'release_uat_2': 'v2',
@@ -199,7 +199,7 @@ class CmdbAPI:
             "msg": "升级成功",
             "data": {
                 "svn_path": None,
-                "svn_version": None,
+                "svn_version": svn_version,
                 "tag": branch_map[branch],
                 "project_name": project_name,
                 "code_version": code_version

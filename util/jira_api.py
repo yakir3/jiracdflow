@@ -15,12 +15,12 @@ jira_config = GetYamlConfig().get_config('JIRA')
 class JiraWebhookData(object):
     """
     初始化 jira webhook 请求数据，格式化为 DB serializer 格式
-    customfield_10100: 配置文件
-    customfield_10104: Apollo
-    customfield_10103: 代码升级
     customfield_10101: 升级类型
     customfield_10200: 功能列表
-    customfield_10201: SQL升级
+    customfield_10201: SQL
+    customfield_10104: Apollo or Nacos
+    customfield_10100: CONFIG
+    customfield_10103: CODE
     """
     def __init__(self, data: Dict):
         self._data = data
@@ -63,16 +63,16 @@ class JiraWebhookData(object):
         self._priority = self._issue_fields.get('priority')['name']
         self._labels = self._issue_fields.get('labels')
         self._environment = self._issue_fields.get('environment')
-        # SQL 升级信息
+        # issue sql_info
         self._sql_info_str = self._issue_fields.get('customfield_10201')
         self._sql_info = literal_eval(self._sql_info_str)
-        # apollo 升级数据
+        # issue apollo_info
         self._apollo_info_str = self._issue_fields.get('customfield_10104')
         self._apollo_info = literal_eval(self._apollo_info_str)
-        # config 升级数据
+        # issue config_info
         self._config_info_str = self._issue_fields.get('customfield_10100')
         self._config_info = literal_eval(self._config_info_str)
-        # code 升级数据
+        # issue code_info
         self._code_info_str = self._issue_fields.get('customfield_10103')
         self._code_info = literal_eval(self._code_info_str)
 
@@ -98,7 +98,7 @@ class JiraWebhookData(object):
             }
         except Exception as err:
             print(err)
-            return f"webhook 数据解析出错，错误原因：{err.__str__()}"
+            return f"Jira webhook 数据解析出错，错误原因：{err.__str__()}"
         # print(self._return_data)
         return self._return_data
 

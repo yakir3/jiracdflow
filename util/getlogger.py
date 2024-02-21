@@ -1,13 +1,16 @@
 import logging
 import logging.config
 import logging.handlers
+import sys
 
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+__all__ = ['GetLogger']
+
 # 获取日志器
 class GetLogger(object):
-    _logger = ["root", "basiclogger", "smmslogger"]
+    _logger = ["root", "basiclogger"]
     def __init__(self, logpath=None):
         self.logpath = logpath if logpath else f"{BASE_DIR}/config/logger.conf"
 

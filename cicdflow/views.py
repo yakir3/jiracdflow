@@ -347,6 +347,7 @@ class CICDFlowView(APIView):
                         return_data['jira_issue_key'] = issue_key
                         jira_api_obj.issue_update(args=cicdflow_ser_data, issue_id=issue_key)
                         jira_api_obj.change_transition(issue_key, 'StartUpgradeAgain')
+                        jira_api_obj.change_transition(issue_key, 'TriggerSubmitSQL')
                         d_logger.info(return_data)
                         return Response(data=return_data, status=status.HTTP_200_OK)
                     else:
@@ -399,25 +400,25 @@ class JiraFlowView(APIView):
     webhook 条件：
         project in (AC, QC) and issuetype in (升级) and status in ("SQL PENDING,"SQL PROCESSING","CONFIG PROCESSING","CODE PROCESSING")
     webhook 判断：
-        webhookEvent = jira:issue_created  --> 首次创建 jira issue，初始化升级数据
+        webhookEvent = jira:issue_created  --> 首次创建 jira issue，初始化升级数据，开始升级流程
         webhookEvent = jira:issue_updated  --> 迭代或重新提交升级，更新升级数据，已最新数据重跑升级流程
-            SQL PENDING：判断是否存在 SQL，存在则提交到 Archery 
-            SQL执行中：由 DBA 人工触发进入下一步
-            CONFIG执行中：由运维人员人工触发进入下一步
-            CODE执行中：判断是否有代码升级
+            SQL PENDING：判断是否存在 SQL，存在则提交到 Archery
+            SQL PROCESSING：由 DBA 审核执行并人工触发进入下一步（UAT 为自动触发）
+            CONFIG PROCESSING：由运维人员人工触发进入下一步
+            CODE PROCESSING：判断是否有代码升级，存在则升级应用
     """
     def post(self,
              request,
              *args: Any,
              **kwargs: Any) -> Response:
         try:
-            # 初始化并序列化 webhook request data 数据
+            # 初始化并序列化 webhook http request data 数据
             jira_event_webhook_obj = JiraEventWebhookAPI(request.data)
             # 暂时不处理运营环境 webhook
             if jira_event_webhook_obj.webhook_env == 'PRO':
                 raise Exception('运营环境跳过，不处理 webhook!!!!!!!!')
 
-            # webhook 事件为 created 时，判断当前 issue 状态，根据状态进行转换
+            # webhook 事件为 created 时，调用 created_event_operate 方法初始化工单与开始流程
             if jira_event_webhook_obj.webhook_event == 'jira:issue_created':
                 jiraworkflow_ser = JiraWorkflowSerializer(data=jira_event_webhook_obj.webhook_data)
                 jiraworkflow_ser.is_valid(raise_exception=True)
@@ -428,12 +429,12 @@ class JiraFlowView(APIView):
 
             # webhook 事件为 updated 时，判断当前 issue 状态，根据状态进行转换
             elif jira_event_webhook_obj.webhook_event == 'jira:issue_updated':
-                # 获取当前 Jira webhook 中数据
+                # 获取当前 Jira webhook 表单中数据
                 current_webhook_data = jira_event_webhook_obj.webhook_data
                 current_issue_key = current_webhook_data.get('issue_key')
                 current_status = current_webhook_data.get('status')
                 current_summary = current_webhook_data.get('summary')
-                # 获取 JiraWorkflow 表中上一次数据
+                # 获取 JiraWorkflow 表中的数据
                 last_issue_obj = JiraWorkflow.objects.get(issue_key=current_issue_key)
                 # 根据 JiraWorkflow 序列化器序列化当前 webhook 数据
                 jiraworkflow_ser = JiraWorkflowSerializer(instance=last_issue_obj, data=current_webhook_data)
@@ -454,25 +455,25 @@ class JiraFlowView(APIView):
                         )
                     # SQL执行中 状态，可转变状态：SQL升级成功 ｜ SQL升级失败
                     case 'SQL PROCESSING':
-                        webhook_result = jira_event_webhook_obj.updated_event_sql_inprogress(
+                        webhook_result = jira_event_webhook_obj.updated_event_sql_processing(
                             last_issue_obj=last_issue_obj,
                             sql_workflow_ins=SqlWorkflow,
                             current_issue_data=jiraworkflow_ser_data
                         )
                     # CONFIG执行中 状态，可转变状态：无配置升级/已升级 ｜ 配置升级成功 ｜ 配置升级失败
                     case 'CONFIG PROCESSING':
-                        webhook_result = jira_event_webhook_obj.updated_event_config_inprogress(
+                        webhook_result = jira_event_webhook_obj.updated_event_config_processing(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jiraworkflow_ser_data
                         )
                     # CODE执行中 状态，可转变状态：无代码升级/已升级 ｜ 代码升级成功 ｜ CODE PROCESSING FAILED
                     case 'CODE PROCESSING':
-                        webhook_result = jira_event_webhook_obj.updated_event_code_inprogress(
+                        webhook_result = jira_event_webhook_obj.updated_event_code_processing(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jiraworkflow_ser_data
                         )
                     case 'FIX PENDING':
-                        webhook_result = jira_event_webhook_obj.updated_event_modify(
+                        webhook_result = jira_event_webhook_obj.updated_event_fix_pending(
                             current_issue_key=current_issue_key
                         )
                     case _:
