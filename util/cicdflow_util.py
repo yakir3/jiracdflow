@@ -108,15 +108,16 @@ def get_sql_commit_data(
             svn_path_value_list = [k for k in svn_path_value_list if k != '']
             sql_instance_name = qc_ins_map[svn_path_value_list[-1]]
             # 备份库 SQL 信息获取
-            bk_sql_content_value = get_backup_commit_data(sql_instance_name, sql_content_value)
-            bk_commit_data = {
-                'sql_index': str(seq_index),
-                'sql_release_info': str(svn_version),
-                'sql': bk_sql_content_value,
-                'workflow_name': f"{current_summary}_备份工单",
-                'resource_tag': sql_resource_name,
-                'instance_tag': sql_instance_name
-            } if bk_sql_content_value else None
+            # bk_sql_content_value = get_backup_commit_data(sql_instance_name, sql_content_value)
+            # bk_commit_data = {
+            #     'sql_index': str(seq_index),
+            #     'sql_release_info': str(svn_version),
+            #     'sql': bk_sql_content_value,
+            #     'workflow_name': f"{current_summary}_备份工单",
+            #     'resource_tag': sql_resource_name,
+            #     'instance_tag': sql_instance_name
+            # } if bk_sql_content_value else None
+            bk_commit_data = None
         # ISLOT
         elif 'islot' in svn_path:
             sql_resource_name = svn_path.split('/')[1].upper()
@@ -129,6 +130,9 @@ def get_sql_commit_data(
                 db_name = 'hotfix'
             elif 'liveslot-sql-v3' in svn_path:
                 db_name = 'ilum03'
+            elif 'pachinko-sql' in svn_path:
+                sql_instance_name = 'pachinko-uat'
+                db_name = 'ilum02'
             bk_commit_data = None
         # GGK
         elif 'ggk' in svn_path:
@@ -147,6 +151,9 @@ def get_sql_commit_data(
             elif 'isagent-report' in svn_path:
                 sql_instance_name = 'isagent-report'
                 db_name = 'ilup03'
+            elif 'ipachinko-merchant' in svn_path:
+                sql_instance_name = 'ipachinko-merchant'
+                db_name = 'ilup04'
             bk_commit_data = None
         else:
             error_msg = "svn 路径不包含产品关键字路径，请确认是否正确输入 svn 路径。"
@@ -729,7 +736,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             upgrade_info_list = []
 
             # 升级代码主逻辑
-            if 'IS01' in current_summary:
+            if 'IS01' in current_summary or 'IS02' in current_summary:
                 start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 print(f'工单 {current_summary} 开始升级代码，开始时间：{start_time}')
                 # 写死 isagent 应用 id 信息
@@ -748,6 +755,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     'frontend-isagent-admin-web': 785,
                     'frontend-isagent-agent-web': 787,
                     'frontend-isagent-web': 786,
+                    'frontend-ipachinko-agent-web': 819,
+                    'frontend-ipachinko-web': 820
                 }
                 branch_map = {
                     'v1': 'release_uat_1',
@@ -764,7 +773,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     else:
                         project_tag = 'v1'
                     # 前端运营镜像包跳过处理
-                    pro_image_list = ['frontend-isagent-web-pro']
+                    pro_image_list = [
+                        'frontend-isagent-web-pro',
+                        'frontend-ipachinko-web-pro'
+                    ]
                     if project_name in pro_image_list:
                         wait_upgrade_ins['tag'] = project_tag
                         upgrade_success_list.append(wait_upgrade_ins)
