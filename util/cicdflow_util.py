@@ -454,8 +454,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 self._webhook_return_data['status'] = False
                 self._webhook_return_data['msg'] = f"存在待执行 SQL 工单提交失败，升级工单 {current_summary} 保持 <SQL PENDING> 状态等待修复"
         except Exception as err:
+            tb_str = traceback.format_exc()
             self._webhook_return_data['status'] = False
-            self._webhook_return_data['msg'] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{err}"
+            # self._webhook_return_data['msg'] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{err}"
+            self._webhook_return_data['msg'] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{tb_str}"
         return self._webhook_return_data
 
     def updated_event_sql_processing(self, last_issue_obj: Any, sql_workflow_ins: Any, current_issue_data: Dict):
@@ -628,8 +630,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
             self._webhook_return_data['status'] = False
             self._webhook_return_data['msg'] = err.__str__()
         except Exception as err:
+            tb_str = traceback.format_exc()
             self._webhook_return_data['status'] = False
-            self._webhook_return_data['msg'] = f"<SQL PROCESSING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
+            # self._webhook_return_data['msg'] = f"<SQL PROCESSING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
+            self._webhook_return_data['msg'] = f"<SQL PROCESSING> 状态 webhook 触发失败，异常原因：{tb_str}"
         return self._webhook_return_data
 
     def updated_event_config_processing(self, last_issue_obj: Any, current_issue_data: Dict):
