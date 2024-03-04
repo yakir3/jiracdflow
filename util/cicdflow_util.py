@@ -2,6 +2,7 @@ from typing import Dict, List, Union, Any, Tuple
 from datetime import datetime
 from time import sleep
 import re
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict, UserDict
 from django.db.models import Q
@@ -583,7 +584,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                         'msg'] = f"工单 {current_summary}  SQL 调用 archery 执行 SQL 接口失败，失败原因：{execute_result['data']}"
                     jira_obj.change_transition(current_issue_key, 'SQLUpgradeFailed')
                     break
-                # 成功执行后等待15s，否则工单可能为 workflow_queuing 状态。等待后再次查询状态，不成功终止后续 SQL 自动执行
+                # 成功触发执行后等待15s，否则工单可能为 workflow_queuing | workflow_executing 状态。等待后再次查询状态，不成功终止后续 SQL 自动执行
                 sleep(15)
                 select_execute_result = archery_obj.get_workflows(args={'id': w_id})
                 execute_status = select_execute_result['data'][0]['status']
@@ -755,8 +756,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     'frontend-isagent-admin-web': 785,
                     'frontend-isagent-agent-web': 787,
                     'frontend-isagent-web': 786,
-                    'frontend-ipachinko-agent-web': 819,
-                    'frontend-ipachinko-web': 820
+                    'frontend-ipachinko-agent-web': 821,
+                    'frontend-ipachinko-web': 822
                 }
                 branch_map = {
                     'v1': 'release_uat_1',
@@ -845,7 +846,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
             last_issue_obj.init_flag['code_init_flag'] += 1
             last_issue_obj.save()
             self._webhook_return_data['status'] = False
-            self._webhook_return_data['msg'] = f"<CODE PROCESSING> 状态 webhook 触发失败，异常原因：{err}"
+            # self._webhook_return_data['msg'] = f"<CODE PROCESSING> 状态 webhook 触发失败，异常原因：{err}"
+            # traceback.print_exc()
+            tb_str = traceback.format_exc()
+            self._webhook_return_data['msg'] = f"<CODE PROCESSING> 状态 webhook 触发失败，异常原因：{tb_str}"
             jira_obj.change_transition(current_issue_key, 'CodeUpgradeFailed')
         return self._webhook_return_data
 
