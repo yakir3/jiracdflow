@@ -47,13 +47,13 @@ WHERE rc.merchant_id = '{merchant_id}' and rc.login_name IN ({username_str});
 """
         # 提交工单
         commit_data = {
-            'sql': delete_sql_content,
+            'sql_content': delete_sql_content,
             'workflow_name': workflow_name,
             'resource_tag': resource_tag,
             'instance_tag': instance_tag,
             'db_name': db_name
         }
-        commit_res = archery_obj.commit_workflow(commit_data)
+        commit_res = archery_obj.commit_workflow(**commit_data)
         # 提交工单失败直接返回，不继续审核 & 执行流程
         if not commit_res['status']:
             return commit_res
@@ -122,13 +122,13 @@ update r_agent_ext_config set cpa_remaining_amount = 0 where id != 1;
 """
         # 提交工单
         commit_data = {
-            'sql': delete_sql_content,
+            'sql_content': delete_sql_content,
             'workflow_name': workflow_name,
             'resource_tag': resource_tag,
             'instance_tag': instance_tag,
             'db_name': db_name
         }
-        commit_res = archery_obj.commit_workflow(commit_data)
+        commit_res = archery_obj.commit_workflow(**commit_data)
         # 提交工单失败直接返回，不继续审核 & 执行流程
         if not commit_res['status']:
             return commit_res

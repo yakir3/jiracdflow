@@ -109,41 +109,6 @@ class JiraAPI(object):
         jira_pwd  = jira_config.get('password')
         self.jira = JIRA(jira_host, auth=(jira_user,jira_pwd))
 
-    def get_projects(self,id=None):
-        if id == None:
-            return self.jira.projects()
-        else:
-            return self.jira.project(id=id)
-
-    def get_project_attributes(self,id):
-        """
-        该方法用来返回项目的详细信息。
-        :param id: 项目的ID或KEY
-        :return: 返回项目属性的字典
-        """
-        pro_dict = {}
-        project = self.get_projects(id=id)
-        pro_dict['id'] = project.id
-        pro_dict['key'] = project.key
-        pro_dict['name'] = project.name
-        pro_dict['descri'] = project.description
-        pro_dict['leader'] = project.lead
-        pro_dict['components'] = project.components
-        pro_dict['verisons'] = project.versions
-        pro_dict['raw'] = project.raw   #项目的原始数据。
-        return pro_dict
-
-    def get_project_all_issue(self,id=None,issuetype=None):
-        """
-        :param id: 项目的id
-        :param issuetype: 问题类型--这里选择故障
-        :return:返回<class 'jira.client.ResultList'>,返回对象可以提取缺陷的id和key
-        """
-        # jql = f'project = {id} AND issuetype = {issuetype} order by created DESC'
-        jql = f'project = {id} order by created DESC'
-        issue_list = self.jira.search_issues(jql_str=jql, startAt=0, maxResults=False)  # 这里没有限制bug数量，所有的都可以返回回来
-        return issue_list
-
     def get_issue_info(self, issue_id=None):
         if issue_id is None:
             return {'status':False, 'msg': 'issue_id is None!', 'data': None}
@@ -173,36 +138,6 @@ class JiraAPI(object):
             return {'status': True, 'msg': '查询完毕', 'data': issue_info}
         except Exception as e:
             return {'status': False, 'msg': '查询失败', 'data': e}
-
-    def get_attachment(self,issue_id=None):
-        if issue_id == None:
-            return {'status':False,'msg':'issue_id is None!','data':None}
-        fields = self.jira.issue(id=issue_id,expand='attachment').fields
-        attachments = fields.attachment
-        if len(attachments) != 0:
-            result_list = []
-            filename_list = []
-            for index in range(len(attachments)):
-                file_name = attachments[index].filename
-                file_info = attachments[index].get()
-                result_list.append({file_name:file_info.decode()})
-                filename_list.append(file_name)
-            result = {'status':True,'msg':'获取附件完毕','data':result_list, 'sql_info': filename_list}
-            return result
-        else:
-            result = {'status':False,'msg':'无附件','data':None}
-            return result
-
-    def get_transition(self,issue_id=None):
-        if issue_id is None:
-            return {'status':False,'msg':'issue_id is None!','data':None}
-        all_res = self.jira.transitions(self.jira.issue(id=issue_id))
-        result_list = []
-        for transition_info in all_res:
-            pprint(transition_info)
-            result_list.append({'trans_id':transition_info['id'],'trans_name':transition_info['name']})
-        result = {'status':True,'msg':'查询完毕','data':result_list}
-        return result
 
     def change_transition(self,issue_id=None,change_id=None):
         if issue_id == None or change_id == None:

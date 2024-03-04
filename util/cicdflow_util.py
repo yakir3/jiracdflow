@@ -66,7 +66,7 @@ def get_sql_commit_data(
     if not has_deploy_uat_flag:
         # 通过 svn 信息获取每个sql 文件与内容，根据内容提交sql工单
         svn_obj = SvnClient(svn_path)
-        sql_content_value = svn_obj.get_file_content(revision=svn_version, filename=svn_file)
+        sql_content = svn_obj.get_file_content(revision=svn_version, filename=svn_file)
 
         # # 增加审核功能，sql_content_value 工单内容不允许 create 语句设置 timestamp 属性，需要为 timestamp(0)
         # audit_timestamp = re.findall(' timestamp[,\s]', sql_content_value)
@@ -82,7 +82,7 @@ def get_sql_commit_data(
             sql_resource_name = 'QC'
             sql_instance_name = 'uat-pg-env'
             table_catalog = 'dbtest'
-            bk_sql_content_value = get_backup_commit_data(table_catalog, sql_content_value)
+            bk_sql_content_value = get_backup_commit_data(table_catalog, sql_content)
             bk_commit_data = {
                 'sql_index': str(seq_index),
                 'sql_release_info': str(svn_version),
@@ -163,7 +163,7 @@ def get_sql_commit_data(
         commit_data = {
             'sql_index': str(seq_index),
             'sql_release_info': str(svn_version),
-            'sql': sql_content_value,
+            'sql_content': sql_content,
             'workflow_name': current_summary,
             'resource_tag': sql_resource_name,
             'instance_tag': sql_instance_name,
@@ -401,7 +401,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     ).filter(Q(w_status='workflow_manreviewing')| Q(w_status='workflow_review_pass') | Q(w_status='workflow_finish'))
                     if not bk_sql_workflow_obj:
                         try:
-                            upgrade_bk_result = archery_obj.commit_workflow(bk_commit_data)
+                            upgrade_bk_result = archery_obj.commit_workflow(**bk_commit_data)
                             bk_name = bk_commit_data.get('workflow_name')
                             assert upgrade_bk_result['status'], f"备份工单 {bk_name} 提交失败"
                             upgrade_bk_result['data']['sql_id'] = sql_id
@@ -422,7 +422,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     ).filter(Q(w_status='workflow_manreviewing')| Q(w_status='workflow_review_pass') | Q(w_status='workflow_finish'))
                     if not sql_workflow_obj:
                         # 调用 archery_api commit 方法提交 SQL
-                        commit_result = archery_obj.commit_workflow(commit_data)
+                        commit_result = archery_obj.commit_workflow(**commit_data)
                         # 成功提交 SQL 则存入 SqlWorkflow 表
                         if commit_result['status']:
                             # 提交成功时，获取 SqlWorkflow 序列化器序列化提交 SQL 工单数据，保存入 sql_workflow 表，用于后续审核和执行同步工单状态

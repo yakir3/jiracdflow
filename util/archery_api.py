@@ -75,32 +75,6 @@ class ArcheryAPI(object):
         except Exception as e:
             return {'status':False,'msg':'查询异常','data':e}
 
-    def get_full_workflows(
-            self,
-            workflow_name_icontains: str,
-            # workflow_status: str = None,
-            # workflow_id: int = 0,
-            page: int = 1,
-            size: int = 30,
-    ):
-        data = {
-            'workflow__workflow_name__icontains': workflow_name_icontains,
-            # 'workflow__status': workflow_status,
-            # 'workflow_id': workflow_id,
-            'page': page,
-            'size': size,
-        }
-        try:
-            url = self.url + '/v1/workflow/'
-            res = requests.get(url=url,params=data,headers=self.headers)
-
-        except Exception as err:
-            return {
-                'status': False,
-                'msg': '工单查询异常',
-                'data': err.__str__()
-            }
-
     def workflow_times(self):
         now = datetime.now()
         end_time = now  + timedelta(days=self.sql_run_max_time)
@@ -152,53 +126,79 @@ class ArcheryAPI(object):
         except Exception as e:
             return {'status': False, 'msg': '查询实例信信息异常', 'data': e}
 
-    def commit_workflow(self, args: Dict=dict):
-        if not args['sql']:
-            return {'status':False,'msg':'args[sql] is None','data':''}
+    def commit_workflow(
+            self,
+            sql_index: int = 0,
+            sql_release_info: int = 0,
+            sql_content: str = None,
+            workflow_name: str = None,
+            demand_url: str = '问题描述',
+            resource_tag: str = None,
+            instance_tag: str = None,
+            db_name: str = None,
+            is_backup: bool = False,
+            engineer: str = 'admin'
+    ) -> Dict[str, Union[str, Dict, bool]]:
+        """
+        Args:
+            sql_index:
+            sql_release_info:
+            sql_content:
+            workflow_name:
+            demand_url:
+            resource_tag:
+            instance_tag:
+            db_name:
+            is_backup:
+            engineer:
+        Returns:
+            Dict: return_data
+        """
+        return_data = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
+        if not sql_content:
+            return_data['msg'] = '提交工单失败，sql 文件内容不能为空或 None'
+            return return_data
         try:
             dates = self.workflow_times()
-            #查询group_id
+            # 查询group_id
             groups_info = self.get_resource_groups()
-            if args['resource_tag'] not in groups_info['data'].keys():
-                return {'status':False,'msg':groups_info['msg'],'data':groups_info['data']}
+            if resource_tag not in groups_info['data'].keys():
+                return {'status': False, 'msg': groups_info['msg'], 'data': groups_info['data']}
             else:
-                group_id = groups_info['data'][args['resource_tag']]
-            #查询 instance_id / db_name
-            instance_info = self.get_instances(instance_name=args['instance_tag'])
+                group_id = groups_info['data'][resource_tag]
+            # 查询 instance_id / db_name
+            instance_info = self.get_instances(instance_name=instance_tag)
             if instance_info['status']:
                 # 单实例多数据库时判断是否传 db_name
-                if args['db_name']:
-                    db_name = args['db_name']
+                if db_name:
+                    db_name = db_name
                 else:
-                    db_name = instance_info['data'][args['instance_tag']]['db_name']
-                instance_id = instance_info['data'][args['instance_tag']]['id']
+                    db_name = instance_info['data'][instance_tag]['db_name']
+                instance_id = instance_info['data'][instance_tag]['id']
             else:
-                return {'status':False,'msg':instance_info['msg'],'data':instance_info['data']}
-
-            # 获取 sql_index 与 sql_release_info 数据
-            sql_index = args.get('sql_index', 0)
-            sql_release_info = args.get('sql_release_info', 0)
-            # if not sql_index or not sql_release_info:
-            #     return {'status': False, 'msg': 'sql_index 或 sql_release_info 值不能为空或 None，请重试', 'data': ''}
+                return {'status': False, 'msg': instance_info['msg'], 'data': instance_info['data']}
 
             data = {
-                'sql_content': args['sql'],                             # sql content
-                'workflow':{
-                    'sql_index': sql_index,                             # 工单SQL执行序号
-                    'sql_release_info': sql_release_info,               # 工单SQL版本信息
-                    'workflow_name': args.get('workflow_name','工单名'), # 工单名
-                    'demand_url': args.get('demand_url','描述链接'),     # 问题描述
-                    'group_id': group_id,                               # 资源组id
-                    'instance': instance_id,                            # 实例ID
-                    'db_name': db_name,                                 # 数据库名
-                    'is_backup': args.get('is_backup', False),          # 是否备份
-                    'engineer': args.get('engineer','admin'),           # 发起人
+                'sql_content': sql_content,  # sql content
+                'workflow': {
+                    'sql_index': sql_index,  # 工单SQL执行序号
+                    'sql_release_info': sql_release_info,  # 工单SQL版本信息
+                    'workflow_name': workflow_name,  # 工单名
+                    'demand_url': demand_url,  # 问题描述
+                    'group_id': group_id,  # 资源组id
+                    'instance': instance_id,  # 实例ID
+                    'db_name': db_name,  # 数据库名
+                    'is_backup': is_backup,  # 是否备份
+                    'engineer': engineer,  # 发起人
                 },
             }
-            data['workflow'] = dict(data['workflow'],**dates)
+            data['workflow'] = dict(data['workflow'], **dates)
             url = self.url + '/v1/workflow/'
-
-            res = requests.post(url=url,json=data,headers=self.headers)
+            res = requests.post(url=url, json=data, headers=self.headers)
             res_data = res.json()
             if res.status_code == 201:
                 # workflow_abort                工作流中止
@@ -221,12 +221,13 @@ class ArcheryAPI(object):
                     }
                     result = {'status': True, 'msg': '提交工单成功,等待审核', 'data': result_data}
                 else:
-                    result = {'status': False, 'msg': '提交工单成功，状态异常,请登陆archery后台查看', 'data':''}
+                    result = {'status': False, 'msg': '提交工单成功，状态异常,请登陆archery后台查看', 'data': ''}
                 return result
             else:
-                return {'status':False,'msg':'提交工单失败','data':res.json()}
-        except Exception as e:
-            return {'status':False,'msg':'提交工单异常','data':e}
+                return {'status': False, 'msg': '提交工单失败', 'data': res.json()}
+        except Exception as err:
+            return_data['msg'] = f"提交工单异常，异常原因: {err.__str__()}"
+        return return_data
 
     def audit_workflow(
             self,

@@ -58,7 +58,7 @@ class CmdbAPI:
             return_data['msg'] = err.__str__()
         return return_data
 
-    def search_project(self,svn_path=None,env=None,tag=None):
+    def search_project(self, svn_path=None, env=None, tag=None):
         if svn_path is None or env is None:
             return {'status':'false','msg':'search_project: svn_path or env is None!'}
         try:
@@ -108,7 +108,7 @@ class CmdbAPI:
         except Exception as e:
             return {'status':False,'msg':'查询工程异常','data':e}
 
-    def upgrade_project(self,id=None,version=None): #传入项目id和version版本升级
+    def upgrade_project(self, id=None, version=None): #传入项目id和version版本升级
         if id is None or version is None:
             raise Exception('upgrade_project: id or version is None!')
         try:
@@ -188,7 +188,13 @@ class CmdbAPI:
         except Exception as err:
             return {'status':False,'msg':'升级失败','data': err.__str__(), 'code_data': code_data}
 
-    def upgrade_v2(self, pid=None, branch=None, project_name=None, code_version=None, svn_version=None):
+    def upgrade_v2(self,
+                   pid=None,
+                   branch=None,
+                   project_name=None,
+                   code_version=None,
+                   svn_version=None
+                   ) -> Dict:
         branch_map = {
             'release_uat_1': 'v1',
             'release_uat_2': 'v2',
