@@ -6,7 +6,7 @@ from ast import literal_eval
 sys.path.append("..")
 from typing import Dict, List, Union, Any
 
-from util.archery_api import ArcheryAPI
+from utils.archery_api import ArcheryAPI
 archery_obj = ArcheryAPI()
 
 # Archery 交互操作：按顺序提交、审核、执行 工单

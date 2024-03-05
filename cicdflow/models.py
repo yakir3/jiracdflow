@@ -2,44 +2,6 @@ from django.db import models
 # from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 
-class CICDFlow(models.Model):
-    email_title = models.CharField(verbose_name='邮件标题', primary_key=True, max_length=255)
-    sql_info = models.JSONField(verbose_name='SVN 信息', blank=False, null=False)
-    config_info = models.JSONField(verbose_name='配置文件信息', blank=False, null=False)
-    apollo_info = models.JSONField(verbose_name='Apollo 信息', blank=False, null=False)
-    project_info = models.JSONField(verbose_name='工程信息', blank=False, null=False)
-    create_date = models.DateTimeField(default=timezone.now)
-    update_date = models.DateTimeField(auto_now=True)
-    class Meta:
-        db_table = 'upgrade_flow'
-        ordering = ['-update_date']
-    def __str__(self):
-        return "Upgrade Info: %s" % (self.email_title)
-
-class CICDState(models.Model):
-    email_title = models.ForeignKey('CICDFlow', on_delete=models.CASCADE, to_field='email_title', related_name='cicdstate')
-    STATE_CHOICES = [
-        (0, '执行成功/无需执行'),
-        (1, '执行失败'),
-        (2, '执行中，未返回状态'),
-        (3, '待执行.'),
-        (9, '未知状态')
-    ]
-    sql_state = models.IntegerField(verbose_name='SQL 升级执行状态', choices=STATE_CHOICES, default=9)
-    # 配置与 Apollo 默认值为0
-    config_state = models.IntegerField(verbose_name='配置文件升级执行状态', choices=STATE_CHOICES, default=9)
-    apollo_state = models.IntegerField(verbose_name='Apollo 升级执行状态', choices=STATE_CHOICES, default=9)
-    project_state = models.IntegerField(verbose_name='代码升级执行状态', choices=STATE_CHOICES, default=9)
-    # flow_state 只保存 0/1/3 状态，对完整工作流是否执行的判断依据
-    flow_state = models.IntegerField(verbose_name='工作流状态', choices=STATE_CHOICES, default=3)
-    create_date = models.DateTimeField(default=timezone.now)
-    update_date = models.DateTimeField(auto_now=True)
-    class Meta:
-        db_table = 'cicd_state'
-        ordering = ['-update_date']
-    def __str__(self):
-        return "State: %s" % (self.email_title)
-
 def init_data():
     return {
         'sql_init_flag': 0,

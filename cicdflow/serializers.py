@@ -1,7 +1,7 @@
 from abc import ABC
 
 from rest_framework import serializers
-from .models import CICDFlow, CICDState, JiraWorkflow, SqlWorkflow
+from .models import JiraWorkflow, SqlWorkflow
 
 """models 类序列化器"""
 class CICDFlowSerializer(serializers.Serializer):
@@ -15,12 +15,6 @@ class CICDFlowSerializer(serializers.Serializer):
     config_info = serializers.JSONField(allow_null=False)
     apollo_info = serializers.JSONField(allow_null=False)
     code_info = serializers.JSONField(allow_null=False)
-
-class CICDStateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CICDState
-        fields = '__all__'
-        read_only_fields = ['id', 'create_date']
 
 class JiraWorkflowSerializer(serializers.ModelSerializer):
     class Meta:

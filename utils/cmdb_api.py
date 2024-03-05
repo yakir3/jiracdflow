@@ -1,10 +1,7 @@
 import json
 import requests
 from ast import literal_eval
-try:
-    from getconfig import GetYamlConfig
-except:
-    from util.getconfig import GetYamlConfig
+from utils.getconfig import GetYamlConfig
 from typing import Dict, List, Union, Any, Tuple
 
 __all__ = ['CmdbAPI']

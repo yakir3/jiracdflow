@@ -2,7 +2,7 @@ import psycopg2
 from datetime import datetime
 from typing import Dict, List, Union
 
-from util.getconfig import GetYamlConfig
+from utils.getconfig import GetYamlConfig
 
 pg_config = GetYamlConfig().get_config('Tool')['Postgres']
 __all__ = ['PostgresClient']

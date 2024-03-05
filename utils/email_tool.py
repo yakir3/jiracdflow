@@ -2,8 +2,7 @@ import smtplib, socket
 from email.mime.text import MIMEText
 from email.header import Header
 from ntlm_auth.ntlm import Ntlm
-
-from util.getconfig import GetYamlConfig
+from utils.getconfig import GetYamlConfig
 
 workstation = socket.gethostname().upper()
 email_config = GetYamlConfig().get_config('Tool')['Email']

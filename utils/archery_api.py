@@ -2,10 +2,7 @@ import requests
 from typing import Dict, Union, Literal
 from datetime import datetime,timedelta
 from ast import literal_eval
-try:
-    from getconfig import GetYamlConfig
-except:
-    from util.getconfig import GetYamlConfig
+from utils.getconfig import GetYamlConfig
 
 # 获取配置
 archery_config = GetYamlConfig().get_config('Archery')['auth']

@@ -2,10 +2,7 @@ from jira import JIRA
 from pprint import pprint
 from typing import Union, Dict
 from ast import literal_eval
-try:
-    from getconfig import GetYamlConfig
-except:
-    from util.getconfig import GetYamlConfig
+from utils.getconfig import GetYamlConfig
 
 __all__ = ['JiraWebhookData', 'JiraAPI']
 

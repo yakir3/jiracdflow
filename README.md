@@ -3,10 +3,6 @@
 
 ## APP START 
 ```shell
-# static dir
-mkdir ./static
-python manage.py collectstatic --noinput
-
 # logs dir
 mkdir logs 
 

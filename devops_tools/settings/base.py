@@ -34,13 +34,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
     'rest_framework',
-    'django_celery_beat',
     'drf_yasg',
-
-    'apollo',
+    # custom app
     'cicdflow',
+    'utils'
 ]
 
 MIDDLEWARE = [
@@ -108,7 +106,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.1/howto/static-files/
 
-#STATIC_ROOT = BASE_DIR.joinpath('static')
+# STATIC_ROOT = BASE_DIR.joinpath('static')
 STATIC_URL = '/static/'
 STATICFILES_DIRS = (BASE_DIR.joinpath('static'),)
 

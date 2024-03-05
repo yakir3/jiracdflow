@@ -1,8 +1,5 @@
 import redis
-try:
-    from getconfig import GetYamlConfig
-except:
-    from util.getconfig import GetYamlConfig
+from utils.getconfig import GetYamlConfig
 
 redis_config = GetYamlConfig().get_config('Tool')['Redis']
 

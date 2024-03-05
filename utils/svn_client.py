@@ -2,10 +2,7 @@ import svn.remote
 import svn.local
 import shutil
 
-try:
-    from getconfig import GetYamlConfig
-except:
-    from util.getconfig import GetYamlConfig
+from utils.getconfig import GetYamlConfig
 
 svn_config = GetYamlConfig().get_config('Tool')['SVN']
 __all__ = ['SvnClient']
