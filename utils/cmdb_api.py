@@ -21,9 +21,10 @@ class CmdbAPI:
             'access-token': self.token,
         }
 
-    def search_info(self,
-                    svn_path: str = None,
-                    ) -> Dict:
+    def search_info(
+            self,
+            svn_path: str = None,
+    ) -> Dict:
         return_data = {
             'status': True,
             'msg': '',
@@ -55,26 +56,36 @@ class CmdbAPI:
             return_data['msg'] = err.__str__()
         return return_data
 
-    def search_project(self, svn_path=None, env=None, tag=None):
+    def search_project(
+            self,
+            svn_path: str = None,
+            env: str = None,
+            tag: str = None
+    ) -> Dict[str, Union[bool, str, Dict]]:
         if svn_path is None or env is None:
-            return {'status':'false','msg':'search_project: svn_path or env is None!'}
+            return {'status': 'false', 'msg': 'svn_path or env is None!'}
+        return_data = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
         try:
             env = env.upper()
             svn_path = svn_path.lower()
             data = {
-                "page":1,
-                "size":50,
-                "svn_path":svn_path,
+                "page": 1,
+                "size": 50,
+                "svn_path": svn_path,
             }
             if env == "UAT": data['name'] = env
             if tag: tag = tag.upper()
             if svn_path.startswith('/'): svn_path = svn_path[1:]
-            all_res = requests.get(url=self.search_url,data=json.dumps(data),headers=self.headers)
+            all_res = requests.get(url=self.search_url, data=json.dumps(data), headers=self.headers)
             if all_res.status_code == 200:
                 all_res = all_res.json()
                 if all_res['code'] == 200:
                     size = 0
-                    result_list = []
+                    tmp_list = []
                     for project_info in all_res['data']['items']:
                         project_svn = project_info['project']['svn_path']
                         _svn = '/'.join(project_svn.split('/')[3::])
@@ -92,41 +103,34 @@ class CmdbAPI:
                             if not tag and env == "PRO" and _tag == "TEST": #运营环境不传入tag:test就跳过运测
                                 continue
                             size += 1
-                            result_list.append(project_info)
+                            tmp_list.append(project_info)
                     if size != 0:
-                        result = {'status':True,'msg':'查询完毕','data':result_list}
+                        return_data['status'] = True
+                        return_data['msg'] = '查询工程成功'
+                        return_data['data'] = tmp_list
                     else:
-                        result = {'status': False, 'msg': '未查询到此工程', 'data': result_list}
+                        return_data['msg'] = '未查询到此工程'
+                        return_data['data'] = tmp_list
                 else:
-                    result = {'status':False,'msg':f'工程查询接口返回状态码 {all_res["code"]}','data':f'{all_res}'}
+                    return_data['msg'] = f'工程查询接口返回状态码 {all_res["code"]}'
+                    return_data['data'] = f'{all_res}'
+                    return return_data
             else:
-                result = {'status':False,'msg':f'cmdb接口返回异常状态码{all_res.status_code}','data':f'{all_res.text}'}
-            return result
-        except Exception as e:
-            return {'status':False,'msg':'查询工程异常','data':e}
+                return_data['msg'] = f'cmdb接口返回异常状态码 {all_res.status_code}'
+                return_data['data'] = f'{all_res.text}'
+        except Exception as err:
+            return_data['msg'] = f"查询工程异常，异常原因: {err.__str__()}"
+        return return_data
 
-    def upgrade_project(self, id=None, version=None): #传入项目id和version版本升级
-        if id is None or version is None:
-            raise Exception('upgrade_project: id or version is None!')
-        try:
-            url = self.upgrade_url + str(id)
-            data = {
-                'operation': 'upgrade',
-                'arg': version,
-                'size': 2000,
-                'page': 1,
-            }
-            res = requests.get(url=url,params=data,headers=self.headers)
-            if res.status_code == 200:
-                res_data = res.json()
-                result = {'status':True,'msg':'升级工程成功','data':f'{res_data["data"]}'}
-            else:
-                result = {'status':False,'msg':'升级工程失败','data':f'{res.text}'}
-            return result
-        except Exception as e:
-            return {'status':False,'msg':'升级工程报错','data':e}
-
-    def upgrade(self, project_name=None, code_version=None, svn_path=None, svn_version=None, tag=None, env='UAT'):
+    def upgrade(
+            self,
+            project_name: str = None,
+            code_version: str = None,
+            svn_path: str = None,
+            svn_version: str = None,
+            tag:str = None,
+            env: str = 'UAT'
+    ) -> Dict[str, Union[bool, str, List, Dict]]:
         if svn_path is None or svn_version is None:
             return {'status': False,'msg':'upgrade_project: svn_path or version is None!'}
 
@@ -134,56 +138,68 @@ class CmdbAPI:
         tag = '' if tag == 'v1' else tag
         real_tag = 'v1' if tag is None or tag == '' else tag
 
-        # 返回升级的代码升级信息
-        #code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': real_tag}
-        code_data = {
-            'svn_path': svn_path,
-            'svn_version': svn_version,
-            'tag': real_tag,
-            'project_name': project_name,
-            'code_version': code_version
+        return_data = {
+            'status': True,
+            'msg': '',
+            'data': {},
+            # 返回升级的代码升级信息
+            'code_data': {
+                'svn_path': svn_path,
+                'svn_version': svn_version,
+                'tag': real_tag,
+                'project_name': project_name,
+                'code_version': code_version
+            }
         }
 
         # svn 路径结尾 prod，不升级代码，直接返回成功
         if svn_path.endswith('prod') and env == 'UAT':
-            return {
-                'status': True,
-                'msg': f"svn 路径{svn_path} 为运营环境 svn 路径，不升级代码",
-                'data': [{'project': "no_project"}],
-                'code_data': code_data
-            }
+            return_data['msg'] = f"svn 路径{svn_path} 为运营环境 svn 路径，不升级代码"
+            return_data['data'] = [{'project': "no_project"}]
+            return return_data
 
         # 版本号为空字符串时，不升级代码（只升级 SQL 或配置）
         if not svn_version:
-            # code_data = {'svn_path': svn_path, 'svn_version': svn_version, 'tag': real_tag}
-            return {
-                'status': True,
-                'msg': '不升级代码（升级工单只升级 SQL 或配置）',
-                'data': [{'project': None}],
-                'code_data': code_data
-            }
+            return_data['msg'] = f"不升级代码（升级工单只升级 SQL 或配置）"
+            return_data['data'] = [{'project': None}]
+            return return_data
+
         try:
-            projects_info = self.search_project(svn_path=svn_path,env=env,tag=tag)
-            result_list = []
+            projects_info = self.search_project(svn_path=svn_path, env=env, tag=tag)
             if projects_info['status']:
-                status = True
+                tmp_list = list()
+                tmp_dict = {'status': True, 'msg': '升级工程成功', 'data': ''}
                 for project_data in projects_info['data']:
+                    # 调用 CMDB /upgrade 接口升级代码
                     p_id = project_data['id']
-                    upgrade_res = self.upgrade_project(p_id, svn_version)
-                    upgrade_res = literal_eval(upgrade_res['data'])
-                    i_status = upgrade_res['status']
-                    if i_status != '成功': status = False
-                    result_list.append(upgrade_res)
-                return {
-                    'status': status,
-                    'msg': '升级完毕',
-                    'data': result_list,
-                    'code_data': code_data
-                }
+                    upgrade_url = self.upgrade_url + str(p_id)
+                    upgrade_data = {
+                        'operation': 'upgrade',
+                        'arg': svn_version,
+                        'size': 2000,
+                        'page': 1,
+                    }
+                    upgrade_res = requests.get(url=upgrade_url, params=upgrade_data, headers=self.headers)
+                    if upgrade_res.status_code == 200:
+                        upgrade_res_json = upgrade_res.json()
+                        tmp_dict['data'] = f"{upgrade_res_json['data']}"
+                    else:
+                        tmp_dict['status'] = False
+                        tmp_dict['msg'] = f'调用 CMDB 升级工程失败'
+                        tmp_dict['data'] = f'{upgrade_res.text}'
+                    return_data['status'] = tmp_dict['status']
+                    eval_data_dict = literal_eval(tmp_dict['data'])
+                    tmp_list.append(eval_data_dict)
+                return_data['msg'] = f"升级代码完成"
+                return_data['data'] = tmp_list
             else:
-                return {'status':False,'msg':projects_info['msg'],'data':projects_info['data'], 'code_data': code_data}
+                return_data['status'] = False
+                return_data['msg'] = projects_info['msg']
+                return_data['data'] = projects_info['data']
         except Exception as err:
-            return {'status':False,'msg':'升级失败','data': err.__str__(), 'code_data': code_data}
+            return_data['status'] = False
+            return_data['msg'] = f"升级代码出现异常，异常原因: {err}"
+        return return_data
 
     def upgrade_v2(self,
                    pid=None,
