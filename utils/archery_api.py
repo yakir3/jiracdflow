@@ -11,50 +11,62 @@ __all__ = ['ArcheryAPI']
 
 class ArcheryAPI(object):
     def __init__(self,archery_conf=archery_config):
-        self.url = archery_conf.get('url','https://uat-archery-api.opsre.net/api')
-        self.sql_run_max_time = 3 #单位day
-        self.__username = archery_conf.get('username')
-        self.__password = archery_conf.get('password')
+        self.url = archery_conf.get('url')
+        self.token_url = archery_conf.get('token_url')
+        self.refresh_url = archery_conf.get('refresh_url')
+        self.verify_url = archery_conf.get('verify_url')
+        self.resource_group_url = archery_conf.get('resource_group_url')
+        self.instance_url = archery_conf.get('instance_url')
+        self.get_workflow_url = archery_conf.get('get_workflow_url')
+        self.sql_run_max_time = 3 # 单位day
+        self._username = archery_conf.get('username')
+        self._password = archery_conf.get('password')
         self.headers = {
             'content-type' : 'application/json',
         }
         self.login_headers = {
             'content-type' : 'application/x-www-form-urlencoded; charset=UTF-8',
         }
-        try:
-            data = {
-                'username': self.__username,
-                'password': self.__password,
-            }
-            token_url = self.url + '/auth/token/'
-            token_res_data = requests.post(url=token_url, data=data, headers=self.login_headers).json()
-            refresh_url = self.url + '/auth/token/refresh/'
-            data = {'refresh': token_res_data['refresh']}
-            refresh_res_data = requests.post(url=refresh_url, data=data, headers=self.login_headers).json()
-            token = 'Bearer ' + refresh_res_data['access']
-            self.headers['authorization'] = token
-        except Exception as e:
-            print(f"archery init err: {e}")
+        # init token
+        token_data = {
+            'username': self._username,
+            'password': self._password,
+        }
+        token_res_data = requests.post(url=self.token_url, data=token_data, headers=self.login_headers).json()
+        refresh_data = {
+            'refresh': token_res_data['refresh']
+        }
+        refresh_res_data = requests.post(url=self.refresh_url, data=refresh_data, headers=self.login_headers).json()
+        token = 'Bearer ' + refresh_res_data['access']
+        self.headers['authorization'] = token
 
-    def get_workflows(self,args=dict):
+    def get_workflows(
+            self,
+            w_id: int = 0,
+            w_status: str = None,
+            workflow_name: str = None,
+            size: int = 100
+    ) -> Dict[str, Union[bool, str, Dict]]:
+        return_data = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
         data = {
-            'id': args.get('id'),
-            'workflow__status':args.get('status'),
-            'size':100,
-            'workflow__workflow_name__icontains': args.get('workflow_name'),
+            'id': w_id,
+            'workflow__status': w_status,
+            'workflow__workflow_name__icontains': workflow_name,
+            'size': size
         }
         try:
-            url = self.url + '/v1/workflow/'
-            res = requests.get(url=url,params=data,headers=self.headers)
-            status = False
-            msg = '查询完成'
-            result = []
+            res = requests.get(url=self.get_workflow_url, params=data, headers=self.headers)
             if res.status_code == 200:
                 res_data = res.json()
                 if res_data['count'] == 0:
-                     msg = '未查询到此work_flow信息'
-                     result = res_data
+                    return_data['msg'] = '查询工单结果为空'
+                    return_data['data'] = res_data
                 else:
+                    tmp_list = []
                     for index in range(res_data['count']):
                         name = res_data['results'][index]['workflow']['workflow_name']
                         wid = res_data['results'][index]['workflow']['id']
@@ -63,65 +75,79 @@ class ArcheryAPI(object):
                             execute_result = literal_eval(res_data['results'][index]['execute_result'])
                         except SyntaxError:
                             execute_result = ""
-                        result.append({'name': name, 'id': wid, 'status': status, 'execute_result': execute_result})
-                        status = True
+                        tmp_list.append({'name': name, 'id': wid, 'status': status, 'execute_result': execute_result})
+                    return_data['status'] = True
+                    return_data['msg'] = '查询工单正常返回'
+                    return_data['data'] = tmp_list
             else:
-                msg = '查询失败'
-                result = res.text
-            return {'status':status,'msg':msg,'data':result}
-        except Exception as e:
-            return {'status':False,'msg':'查询异常','data':e}
+                return_data['msg'] = '查询工单失败，请求接口返回非200'
+                return_data['data'] = res.text
+        except Exception as err:
+            return_data['msg'] = f"提交工单异常，异常原因: {err.__str__()}"
+        return return_data
 
     def workflow_times(self):
         now = datetime.now()
-        end_time = now  + timedelta(days=self.sql_run_max_time)
+        end_time = now + timedelta(days=self.sql_run_max_time)
         return {
             'run_date_start': str(now),
             'run_date_end': str(end_time),
         }
 
     def get_resource_groups(self):
+        return_data = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
         try:
-            url = self.url + '/v1/user/resourcegroup/'
-            res = requests.get(url=url,headers=self.headers)
+            res = requests.get(url=self.resource_group_url, headers=self.headers)
             res_data = res.json()
             if res.status_code == 200:
                 result = {
                     res_data['results'][index]['group_name']:res_data['results'][index]['group_id'] for index in range(res_data['count'])
                 }
-                status = True
+                return_data['status'] = True
+                return_data['msg'] = 'success'
+                return_data['data'] = result
             else:
-                status = False
-                result = res_data
-            return {'status': status, 'msg': '查询资源组信息完毕', 'data': result}
-        except Exception as e:
-            return {'status': False, 'msg':'查询资源组信息异常','data':e}
+                return_data['msg'] = '查询资源组信息失败，请求接口返回非200'
+                return_data['data'] = res_data
+            return return_data
+        except Exception as err:
+            return_data['msg'] = f"查询资源组信息异常，异常原因：{err}"
+            return return_data
 
     def get_instances(self, instance_name=None):
+        return_data = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
         try:
-            url = self.url + '/v1/instance/'
             data = {
                 'size': 100,  # 查询实例数量
             }
-            res = requests.get(url=url, params=data, headers=self.headers)
+            res = requests.get(url=self.instance_url, params=data, headers=self.headers)
             res_data = res.json()
-            result = {}
-            status = False
             if res.status_code == 200:
+                tmp_data = {}
                 for index in range(res_data['count']):
                     _instance_name = res_data['results'][index]['instance_name']
                     instance_id = res_data['results'][index]['id']
                     db_name = res_data['results'][index]['db_name']
                     if instance_name == _instance_name:
-                        result[instance_name] = {'id': instance_id, 'db_name': db_name}
-                        status = True
-                msg = '查询实例不存在' if not status else '查询实例信息完毕'
+                        tmp_data[instance_name] = {'id': instance_id, 'db_name': db_name}
+                return_data['status'] = True
+                return_data['msg'] = '查询实例信息完成'
+                return_data['data'] = tmp_data
             else:
-                result = res_data
-                msg = '查询实例失败'
-            return {'status': status, 'msg': msg, 'data': result}
-        except Exception as e:
-            return {'status': False, 'msg': '查询实例信信息异常', 'data': e}
+                return_data['msg'] = '查询实例信息失败, 请求查询接口响应非200'
+                return_data['data'] = res_data
+            return return_data
+        except Exception as err:
+            return_data['msg'] = f"查询实例信息异常，异常原因：{err}"
+            return return_data
 
     def commit_workflow(
             self,
@@ -161,23 +187,27 @@ class ArcheryAPI(object):
             return return_data
         try:
             dates = self.workflow_times()
-            # 查询group_id
+            # 查询 group_id
             groups_info = self.get_resource_groups()
             if resource_tag not in groups_info['data'].keys():
-                return {'status': False, 'msg': groups_info['msg'], 'data': groups_info['data']}
+                return_data['msg'] = groups_info['msg']
+                return_data['data'] = groups_info['data']
+                return return_data
             else:
                 group_id = groups_info['data'][resource_tag]
             # 查询 instance_id / db_name
             instance_info = self.get_instances(instance_name=instance_tag)
-            if instance_info['status']:
+            if not instance_info['status']:
+                return_data['msg'] = instance_info['msg']
+                return_data['data'] = instance_info['data']
+                return return_data
+            else:
                 # 单实例多数据库时判断是否传 db_name
                 if db_name:
                     db_name = db_name
                 else:
                     db_name = instance_info['data'][instance_tag]['db_name']
                 instance_id = instance_info['data'][instance_tag]['id']
-            else:
-                return {'status': False, 'msg': instance_info['msg'], 'data': instance_info['data']}
 
             data = {
                 'sql_content': sql_content,  # sql content

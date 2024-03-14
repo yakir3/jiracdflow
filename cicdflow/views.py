@@ -140,7 +140,7 @@ class CICDFlowView(APIView):
                     w_status = sql_item.get('w_status')
                     # sql_info 工单存在 exception 状态时，从 archery_api 接口获取 errormessage
                     if w_status == 'workflow_exception':
-                        select_result = archery_obj.get_workflows(args={'id': w_id})
+                        select_result = archery_obj.get_workflows(w_id=w_id)
                         errormessage = select_result['data'][0]['execute_result'][0]['errormessage']
                     else:
                         errormessage = ''

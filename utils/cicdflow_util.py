@@ -137,14 +137,9 @@ def get_sql_commit_data(
                 sql_instance_name = 'pachinko-uat'
                 db_name = 'ilum02'
             bk_commit_data = None
-        # GGK
-        elif 'ggk' in svn_path:
-            sql_resource_name = 'GGK'
-            sql_instance_name = 'ggk-uat'
-            bk_commit_data = None
         # ISAGENT
         elif 'isagent' in svn_path:
-            sql_resource_name = 'ISLOT'
+            sql_resource_name = 'ISAGENT'
             if 'isagent-merchant' in svn_path:
                 sql_instance_name = 'isagent-merchant'
                 db_name = 'ilup01'
@@ -532,7 +527,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             for audit_sql_data in audit_sql_list:
                 # SQL 工单 ID，通过唯一 ID 查询结果
                 w_id = audit_sql_data['w_id']
-                select_result = archery_obj.get_workflows(args={'id': w_id})
+                select_result = archery_obj.get_workflows(w_id=w_id)
                 sql_workflow_status = select_result['data'][0]['status']
                 audit_ins = audit_sql_obj.get(**audit_sql_data)
                 # 工单为待审核状态时，调用 archery_api 方法审核通过工单
@@ -575,7 +570,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             for execute_sql_data in execute_sql_list:
                 # SQL 工单 ID，通过唯一 ID 查询结果
                 w_id = execute_sql_data['w_id']
-                # select_result = archery_obj.get_workflows(args={'id': w_id})
+                # select_result = archery_obj.get_workflows(w_id=w_id)
                 # sql_workflow_status = select_result['data'][0]['status']
                 execute_ins = execute_sql_obj.get(**execute_sql_data)
 
@@ -590,7 +585,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     break
                 # 成功触发执行后等待15s，否则工单可能为 workflow_queuing | workflow_executing 状态。等待后再次查询状态，不成功终止后续 SQL 自动执行
                 sleep(15)
-                select_execute_result = archery_obj.get_workflows(args={'id': w_id})
+                select_execute_result = archery_obj.get_workflows(w_id=w_id)
                 execute_status = select_execute_result['data'][0]['status']
                 execute_ins.w_status = execute_status
                 execute_ins.save()
