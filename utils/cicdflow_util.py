@@ -219,7 +219,72 @@ def get_backup_commit_data(sql_instance_name: str, sql_content_value: str) -> Un
 #             filtered_rows.append(row)
 #     return filtered_rows
 
-def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upgrade_info_list: List) -> Tuple:
+# def thread_upgrade_code(
+#         wait_upgrade_list: List,
+#         upgrade_success_list: List,
+#         upgrade_info_list: List
+#     ) -> Tuple:
+#     # 实例化 cmdb 对象，调用 upgrade 方法升级代码
+#     cmdb_obj = CmdbAPI()
+#
+#     # 延迟升级，等待 harbor 镜像同步到 gcp
+#     if len(wait_upgrade_list) <= 3:
+#         sleep(30)
+#     elif 3 < len(wait_upgrade_list) <= 6:
+#         sleep(75)
+#     else:
+#         sleep(90)
+#     with ThreadPoolExecutor(max_workers=12) as executor:
+#         futures = []
+#         # 循环待升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
+#         for code_data in wait_upgrade_list:
+#             # code_data['env'] = current_environment
+#             code_data['env'] = 'UAT'
+#             future = executor.submit(cmdb_obj.upgrade, **code_data)
+#             futures.append(future)
+#         # 获取升级结果列表，根据列表状态返回升级结果
+#         upgrade_results = [future.result() for future in futures]
+#         d_logger.info(upgrade_results)
+#         for upgrade_result in upgrade_results:
+#             code_data_info = upgrade_result['code_data']
+#             upgr_p = upgrade_result['data'][0]['project']
+#             # code_data_info.pop('env')
+#             fail_msg = f"svn 路径 {code_data_info['svn_path']} 对应工程升级失败，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}，错误原因：{upgrade_result['msg']}"
+#             success_msg = f"svn 路径 {code_data_info['svn_path']} 对应工程升级成功，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}"
+#             if upgrade_result['status']:
+#                 upgrade_success_list.append(code_data_info)
+#                 if upgr_p:
+#                     # prod 工程不做升级
+#                     if upgr_p == "no_project":
+#                         d_logger.info(f"{upgrade_result['msg']}")
+#                     else:
+#                         upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:35s} 升级版本: {code_data_info['svn_version']}")
+#                         d_logger.info(success_msg)
+#                 # 没有升级工程，只有 SQL 或配置升级
+#                 else:
+#                     upgrade_info_list.append(None)
+#                     d_logger.info(f"{upgrade_result['msg']}")
+#             else:
+#                 d_logger.error(fail_msg)
+#                 retry_flag = 0
+#                 # CodeUpgradeFailed重试机制，等待10s重试2次升级
+#                 while retry_flag < 2:
+#                     d_logger.error(fail_msg)
+#                     sleep(10)
+#                     retry_result = cmdb_obj.upgrade(**code_data_info)
+#                     if retry_result['status']:
+#                         upgrade_success_list.append(code_data_info)
+#                         upgrade_info_list.append(f"{retry_result['data'][0]['project']:35s} 升级版本: {code_data_info['svn_version']}")
+#                         d_logger.info(success_msg)
+#                         break
+#                     retry_flag += 1
+#         return upgrade_success_list, upgrade_info_list
+
+def thread_upgrade_code(
+        wait_upgrade_list: List,
+        upgrade_success_list: List,
+        upgrade_info_list: List
+    ) -> Tuple:
     # 实例化 cmdb 对象，调用 upgrade 方法升级代码
     cmdb_obj = CmdbAPI()
 
@@ -230,7 +295,7 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
         sleep(75)
     else:
         sleep(90)
-    with ThreadPoolExecutor(max_workers=15) as executor:
+    with ThreadPoolExecutor(max_workers=12) as executor:
         futures = []
         # 循环待升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
         for code_data in wait_upgrade_list:
@@ -275,7 +340,6 @@ def thread_upgrade_code(wait_upgrade_list: List, upgrade_success_list: List, upg
                         break
                     retry_flag += 1
         return upgrade_success_list, upgrade_info_list
-
 
 # 自定义定长字典类
 class LimitedDict(UserDict):
@@ -754,6 +818,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     'backend-isagent-task': 794,
                     'backend-isagent-user': 797,
                     'backend-isagent-xxljob': 798,
+                    'backend-isagent-payment-gateway': 825,
                     'frontend-isagent-admin-web': 785,
                     'frontend-isagent-agent-web': 787,
                     'frontend-isagent-web': 786,

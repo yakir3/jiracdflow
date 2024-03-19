@@ -122,6 +122,139 @@ class CmdbAPI:
             return_data['msg'] = f"查询工程异常，异常原因: {err.__str__()}"
         return return_data
 
+    # 通过 project_name 查询 id，返回 id 用于升级
+    def search_id_by_project_name(
+            self,
+            project_name: str = None,
+            tag: str = None,
+            branch: str = None,
+            env: str = 'UAT'
+    ) -> Dict[str, Union[bool, str, int]]:
+        return_data = {
+            'status': False,
+            'msg': '',
+            'pid': 0
+        }
+        try:
+            # upgrade v2 接口
+            if branch:
+                # 拼装可用于查询用的真实 PROJECT_NAME 字段
+                dash_p = project_name.upper().replace('-', '_')
+                # 过滤 UAT 开头工程名
+                p_name = f"{env.upper()}_{dash_p}"
+                data = {
+                    'page': 1,
+                    'size': 50,
+                    'name': p_name
+                }
+                # 请求接口，调整数据
+                cmdb_req = requests.get(url=self.search_url, json=data, headers=self.headers)
+                if cmdb_req.status_code == 200:
+                    cmdb_req_json = cmdb_req.json()
+                    return_data['status'] = True
+                    return_data['msg'] = '查询<升级发布>工程 ID 成功'
+                    return_data['pid'] = cmdb_req_json['data']['items'][0]['id']
+                else:
+                    return_data['msg'] = f'查询 CMDB <升级发布>接口返回非200状态, 返回数据 {cmdb_req.text}'
+            # upgrade 接口
+            else:
+                # 拼装可用于查询用的真实 PROJECT_NAME 字段
+                if tag is None or tag == 'v1' or tag == '':
+                    p_name = project_name.upper().replace('-', '_')
+                else:
+                    p_name = project_name.upper().replace('-', '_')
+                    p_name = f"{p_name}_{tag.upper()}"
+                data = {
+                    'page': 1,
+                    'size': 50,
+                    'name': p_name
+                }
+                # 请求接口，调整真实数据
+                cmdb_req = requests.get(url=self.search_url, json=data, headers=self.headers)
+                if cmdb_req.status_code == 200:
+                    cmdb_req_json = cmdb_req.json()
+                    project_items = cmdb_req_json['data']['items']
+                    # 筛选唯一工程名值
+                    project_info_list = [proj for proj in project_items if proj['project']['name'].endswith(p_name)]
+                    # 过滤 UAT 开头工程名
+                    project_info_list = [proj for proj in project_info_list if proj['project']['name'].startswith('UAT')]
+                    return_data['status'] = True
+                    return_data['msg'] = '查询<升级发布>工程 ID 成功'
+                    return_data['pid'] = project_info_list[0]['id']
+                else:
+                    return_data['msg'] = f'查询 CMDB <升级发布>接口返回非200状态, 返回数据 {cmdb_req.text}'
+        except Exception as err:
+            return_data['msg'] = f'查询<升级发布>工程 ID 异常，异常原因：{err}'
+        return return_data
+
+    def upgrade_by_project_name(
+            self,
+            project_name: str = None,
+            tag: str = None,
+            branch: str = None,
+            svn_path: str = None,
+            svn_version: str = None,
+            code_version: str = None,
+            env: str = 'UAT',
+    ) -> Dict[str, Union[bool, str, List, Dict]]:
+        # 返回数据，兼容 v1 v2 版本的升级接口
+        return_data = {
+            "status": False,
+            "msg": f"工程：{project_name} <升级发布> 失败",
+            "data": {
+                "project_name": project_name,
+                "tag": tag,
+                "svn_path": svn_path,
+                "svn_version": svn_version,
+                "code_version": code_version,
+                "notice_project_name": None
+            }
+        }
+        try:
+            # 版本号为空字符串时，不升级代码（只升级 SQL 或配置）
+            if not svn_version and not code_version:
+                return_data['status'] = True
+                return_data['msg'] = f"不升级代码（升级工单只升级 SQL 或配置）"
+                # return_data['data'] = [{'project': None}]
+                return return_data
+
+            # 通过 project_name 获取<升级发布>工程真实 ID
+            project_info = self.search_id_by_project_name(project_name=project_name, tag=tag, branch=branch)
+            assert project_info['status'], f"工程 {project_name} 获取 CMDB <升级发布> ID 失败，失败原因：{project_info['msg']}"
+            pid = project_info['pid']
+
+            # upgrade v2 接口
+            if branch:
+                url = self.upgrade_v2_url + str(pid)
+                upgrade_data = {
+                    "id": pid,
+                    "branch": branch,
+                    "version": code_version,
+                }
+                cmdb_req = requests.post(url=url, json=upgrade_data, headers=self.headers)
+            # upgrade v1 接口
+            else:
+                url = self.upgrade_url + str(pid)
+                upgrade_data = {
+                    'operation': 'upgrade',
+                    'arg': svn_version,
+                    'size': 2000,
+                    'page': 1,
+                }
+                cmdb_req = requests.get(url=url, json=upgrade_data, headers=self.headers)
+            # 获取请求结果，返回升级数据
+            if cmdb_req.status_code == 200:
+                cmdb_req_json = cmdb_req.json()
+                notice_project_name = cmdb_req_json['data'].get('project', f"{project_name}")
+                print(cmdb_req_json)
+                return_data['status'] = True
+                return_data['msg'] = f'工程：{project_name} <升级发布> 成功'
+                return_data['data']['notice_project_name'] = notice_project_name
+            return return_data
+        except Exception as err:
+            return_data['msg'] = f'调用 CMDB <升级发布> 异常，异常原因：{err.__str__()}'
+        return return_data
+
     def upgrade(
             self,
             project_name: str = None,
@@ -165,11 +298,11 @@ class CmdbAPI:
             return return_data
 
         try:
-            projects_info = self.search_project(svn_path=svn_path, env=env, tag=tag)
-            if projects_info['status']:
+            project_info = self.search_project(svn_path=svn_path, env=env, tag=tag)
+            if project_info['status']:
                 tmp_list = list()
                 tmp_dict = {'status': True, 'msg': '升级工程成功', 'data': ''}
-                for project_data in projects_info['data']:
+                for project_data in project_info['data']:
                     # 调用 CMDB /upgrade 接口升级代码
                     p_id = project_data['id']
                     upgrade_url = self.upgrade_url + str(p_id)
@@ -194,20 +327,21 @@ class CmdbAPI:
                 return_data['data'] = tmp_list
             else:
                 return_data['status'] = False
-                return_data['msg'] = projects_info['msg']
-                return_data['data'] = projects_info['data']
+                return_data['msg'] = project_info['msg']
+                return_data['data'] = project_info['data']
         except Exception as err:
             return_data['status'] = False
             return_data['msg'] = f"升级代码出现异常，异常原因: {err}"
         return return_data
 
-    def upgrade_v2(self,
-                   pid=None,
-                   branch=None,
-                   project_name=None,
-                   code_version=None,
-                   svn_version=None
-                   ) -> Dict:
+    def upgrade_v2(
+            self,
+            project_name: str = None,
+            code_version: str = None,
+            svn_version: str = None,
+            pid: str = None,
+            branch: str = None
+    ) -> Dict:
         branch_map = {
             'release_uat_1': 'v1',
             'release_uat_2': 'v2',
@@ -215,7 +349,7 @@ class CmdbAPI:
         }
         v2_return_data = {
             "status": True,
-            "msg": "升级成功",
+            "msg": "<升级发布>成功",
             "data": {
                 "svn_path": None,
                 "svn_version": svn_version,
