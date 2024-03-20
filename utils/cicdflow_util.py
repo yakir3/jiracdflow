@@ -219,72 +219,12 @@ def get_backup_commit_data(sql_instance_name: str, sql_content_value: str) -> Un
 #             filtered_rows.append(row)
 #     return filtered_rows
 
-# def thread_upgrade_code(
-#         wait_upgrade_list: List,
-#         upgrade_success_list: List,
-#         upgrade_info_list: List
-#     ) -> Tuple:
-#     # 实例化 cmdb 对象，调用 upgrade 方法升级代码
-#     cmdb_obj = CmdbAPI()
-#
-#     # 延迟升级，等待 harbor 镜像同步到 gcp
-#     if len(wait_upgrade_list) <= 3:
-#         sleep(30)
-#     elif 3 < len(wait_upgrade_list) <= 6:
-#         sleep(75)
-#     else:
-#         sleep(90)
-#     with ThreadPoolExecutor(max_workers=12) as executor:
-#         futures = []
-#         # 循环待升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
-#         for code_data in wait_upgrade_list:
-#             # code_data['env'] = current_environment
-#             code_data['env'] = 'UAT'
-#             future = executor.submit(cmdb_obj.upgrade, **code_data)
-#             futures.append(future)
-#         # 获取升级结果列表，根据列表状态返回升级结果
-#         upgrade_results = [future.result() for future in futures]
-#         d_logger.info(upgrade_results)
-#         for upgrade_result in upgrade_results:
-#             code_data_info = upgrade_result['code_data']
-#             upgr_p = upgrade_result['data'][0]['project']
-#             # code_data_info.pop('env')
-#             fail_msg = f"svn 路径 {code_data_info['svn_path']} 对应工程升级失败，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}，错误原因：{upgrade_result['msg']}"
-#             success_msg = f"svn 路径 {code_data_info['svn_path']} 对应工程升级成功，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}"
-#             if upgrade_result['status']:
-#                 upgrade_success_list.append(code_data_info)
-#                 if upgr_p:
-#                     # prod 工程不做升级
-#                     if upgr_p == "no_project":
-#                         d_logger.info(f"{upgrade_result['msg']}")
-#                     else:
-#                         upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:35s} 升级版本: {code_data_info['svn_version']}")
-#                         d_logger.info(success_msg)
-#                 # 没有升级工程，只有 SQL 或配置升级
-#                 else:
-#                     upgrade_info_list.append(None)
-#                     d_logger.info(f"{upgrade_result['msg']}")
-#             else:
-#                 d_logger.error(fail_msg)
-#                 retry_flag = 0
-#                 # CodeUpgradeFailed重试机制，等待10s重试2次升级
-#                 while retry_flag < 2:
-#                     d_logger.error(fail_msg)
-#                     sleep(10)
-#                     retry_result = cmdb_obj.upgrade(**code_data_info)
-#                     if retry_result['status']:
-#                         upgrade_success_list.append(code_data_info)
-#                         upgrade_info_list.append(f"{retry_result['data'][0]['project']:35s} 升级版本: {code_data_info['svn_version']}")
-#                         d_logger.info(success_msg)
-#                         break
-#                     retry_flag += 1
-#         return upgrade_success_list, upgrade_info_list
 
-def thread_upgrade_code(
+def thread_upgrade(
         wait_upgrade_list: List,
         upgrade_success_list: List,
         upgrade_info_list: List
-    ) -> Tuple:
+    ) -> Tuple[List, List]:
     # 实例化 cmdb 对象，调用 upgrade 方法升级代码
     cmdb_obj = CmdbAPI()
 
@@ -297,46 +237,51 @@ def thread_upgrade_code(
         sleep(90)
     with ThreadPoolExecutor(max_workers=12) as executor:
         futures = []
-        # 循环待升级代码列表，调用 cmdb_obj.upgrade 方法升级代码
-        for code_data in wait_upgrade_list:
-            # code_data['env'] = current_environment
-            code_data['env'] = 'UAT'
-            future = executor.submit(cmdb_obj.upgrade, **code_data)
+        # 循环待升级代码列表，调用 cmdb_obj.project_deploy 方法升级代码
+        for wait_upgrade_ins in wait_upgrade_list:
+            d_logger.info(wait_upgrade_ins)
+            future = executor.submit(cmdb_obj.project_deploy, **wait_upgrade_ins)
             futures.append(future)
         # 获取升级结果列表，根据列表状态返回升级结果
-        upgrade_results = [future.result() for future in futures]
-        d_logger.info(upgrade_results)
-        for upgrade_result in upgrade_results:
-            code_data_info = upgrade_result['code_data']
-            upgr_p = upgrade_result['data'][0]['project']
-            # code_data_info.pop('env')
-            fail_msg = f"svn 路径 {code_data_info['svn_path']} 对应工程升级失败，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}，错误原因：{upgrade_result['msg']}"
-            success_msg = f"svn 路径 {code_data_info['svn_path']} 对应工程升级成功，升级版本：{code_data_info['svn_version']}，升级tag：{code_data_info['tag']}"
-            if upgrade_result['status']:
-                upgrade_success_list.append(code_data_info)
-                if upgr_p:
-                    # prod 工程不做升级
-                    if upgr_p == "no_project":
-                        d_logger.info(f"{upgrade_result['msg']}")
-                    else:
-                        upgrade_info_list.append(f"{upgrade_result['data'][0]['project']:35s} 升级版本: {code_data_info['svn_version']}")
-                        d_logger.info(success_msg)
-                # 没有升级工程，只有 SQL 或配置升级
-                else:
+        upgrade_result_list = [future.result() for future in futures]
+        d_logger.info(upgrade_result_list)
+        for upgrade_result in upgrade_result_list:
+            # cmdb_obj.project_deploy 返回结果
+            upgrade_status = upgrade_result['status']
+            upgrade_msg = upgrade_result['msg']
+            upgrade_notice_flags = upgrade_result['notice_flags']
+            # 解析返回数据
+            upgrade_data = upgrade_result['data']
+            upgrade_project_name = upgrade_data['project_name']
+            upgrade_project_version = upgrade_data['code_version']
+
+            # 多进程方式升级成功
+            if upgrade_status:
+                # 日志记录升级消息
+                d_logger.info(upgrade_msg)
+                # 升级成功的数据放入 upgrade_success_list
+                upgrade_success_list.append(upgrade_data)
+                # 仅 SQL 升级
+                if upgrade_notice_flags == 'ONLY_SQL':
                     upgrade_info_list.append(None)
-                    d_logger.info(f"{upgrade_result['msg']}")
+                # # 运营工程不做升级
+                # elif upgrade_notice_flags == 'PROD_PROJECT':
+                #     d_logger.info(upgrade_msg)
+                else:
+                    upgrade_info_list.append(f"{upgrade_project_name:25s} 升级版本: {upgrade_project_version}")
+            # 多进程方式升级失败，继续尝试2次升级重试
             else:
-                d_logger.error(fail_msg)
+                # 日志记录升级错误消息
+                d_logger.error(upgrade_msg)
+                # CodeUpgradeFailed 重试机制，等待10s重试2次升级
                 retry_flag = 0
-                # CodeUpgradeFailed重试机制，等待10s重试2次升级
                 while retry_flag < 2:
-                    d_logger.error(fail_msg)
                     sleep(10)
-                    retry_result = cmdb_obj.upgrade(**code_data_info)
+                    retry_result = cmdb_obj.project_deploy(**upgrade_data)
                     if retry_result['status']:
-                        upgrade_success_list.append(code_data_info)
-                        upgrade_info_list.append(f"{retry_result['data'][0]['project']:35s} 升级版本: {code_data_info['svn_version']}")
-                        d_logger.info(success_msg)
+                        upgrade_success_list.append(upgrade_data)
+                        upgrade_info_list.append(f"{upgrade_project_name:25s} 升级版本: {upgrade_project_version}")
+                        d_logger.info(retry_result['msg'])
                         break
                     retry_flag += 1
         return upgrade_success_list, upgrade_info_list
@@ -771,17 +716,18 @@ class JiraEventWebhookAPI(JiraWebhookData):
                     'msg'] = f"代码升级数据为空，自动触发进入下一流程\n升级工单 {current_summary} 触发转换 <NoCodeUpgrade/AlreadyUpgrade> 到状态 <UAT UPGRADED>"
                 return self._webhook_return_data
 
-            # current_code_info 数据调整
+            # tag 数据为 None 或 ''，调整 current_code_info 中 tag 值为 v1
             for item in current_code_info:
-                if item['tag'] == '':
+                if item['tag'] is None or item['tag'] == '':
                     item['tag'] = 'v1'
+
             # 初始化迭代升级代码数据，判断是否为首次升级
             # 非首次升级代码
             if code_init_flag:
-                # 待升级的 code_info 数据
-                wait_upgrade_list = compare_list_info(last_code_info, current_code_info)
                 # 已成功升级的 code_info 数据
                 upgrade_success_list = last_code_info
+                # 待升级的 code_info 数据
+                wait_upgrade_list = compare_list_info(last_code_info, current_code_info)
                 # 迭代升级，对比与上一次 webhook 中 code_info 数据，无变化则触发跳过流程
                 if not wait_upgrade_list:
                     last_issue_obj.status = 'UAT UPGRADED'
@@ -795,6 +741,10 @@ class JiraEventWebhookAPI(JiraWebhookData):
             else:
                 # 待升级的 code_info 数据
                 wait_upgrade_list = last_code_info
+                # tag 数据为 None 或 ''，调整 current_code_info 中 tag 值为 v1
+                for item in wait_upgrade_list:
+                    if item['tag'] is None or item['tag'] == '':
+                        item['tag'] = 'v1'
                 # 已成功升级的 code_info 数据
                 upgrade_success_list = []
 
@@ -802,88 +752,30 @@ class JiraEventWebhookAPI(JiraWebhookData):
             upgrade_info_list = []
 
             # 升级代码主逻辑
-            if 'IS01' in current_summary or 'IS02' in current_summary:
-                start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                d_logger.info(f'工单 {current_summary} 开始升级代码，开始时间：{start_time}')
-                # 写死 isagent 应用 id 信息
-                id_map = {
-                    'backend-isagent-admin': 789,
-                    'backend-isagent-agent': 788,
-                    'backend-isagent-cms': 790,
-                    'backend-isagent-common': 793,
-                    'backend-isagent-game': 792,
-                    'backend-isagent-gateway': 796,
-                    'backend-isagent-prom': 791,
-                    'backend-isagent-report': 795,
-                    'backend-isagent-task': 794,
-                    'backend-isagent-user': 797,
-                    'backend-isagent-xxljob': 798,
-                    'backend-isagent-payment-gateway': 825,
-                    'frontend-isagent-admin-web': 785,
-                    'frontend-isagent-agent-web': 787,
-                    'frontend-isagent-web': 786,
-                    'frontend-ipachinko-agent-web': 821,
-                    'frontend-ipachinko-web': 822
-                }
-                branch_map = {
-                    'v1': 'release_uat_1',
-                    'v2': 'release_uat_2',
-                    'v3': 'release_uat_3'
-                }
-                cmdb_obj = CmdbAPI()
-                for wait_upgrade_ins in wait_upgrade_list:
-                    d_logger.info(wait_upgrade_ins)
-                    project_name = wait_upgrade_ins['project_name']
-                    # tag 为空时，强制升级为 v1 环境
-                    if bool(wait_upgrade_ins['tag']):
-                        project_tag = wait_upgrade_ins['tag']
-                    else:
-                        project_tag = 'v1'
-                    # 前端运营镜像包跳过处理
-                    pro_image_list = [
-                        'frontend-isagent-web-pro',
-                        'frontend-ipachinko-web-pro'
-                    ]
-                    if project_name in pro_image_list:
-                        wait_upgrade_ins['tag'] = project_tag
-                        upgrade_success_list.append(wait_upgrade_ins)
-                        d_logger.info(f"工程 {project_name} 为运营镜像，跳过升级。")
-                        continue
-                    # 提交的数据转换为数据代码所需数据
-                    pid = id_map[project_name]
-                    branch = branch_map[project_tag]
-                    code_version = wait_upgrade_ins['code_version']
-                    svn_version = wait_upgrade_ins['svn_version']
-                    # 调用 cmdb upgrade_v2 方法升级
-                    upgrade_result = cmdb_obj.upgrade_v2(pid, branch, project_name, code_version, svn_version)
-                    # d_logger.info(upgrade_result)
-                    if upgrade_result['status']:
-                        upgrade_success_list.append(upgrade_result['data'])
-                        upgrade_info_list.append(upgrade_result['data']['project_name'])
-                end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                d_logger.info(f'代码升级结束，结束时间：{end_time}')
-            else:
-                start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                d_logger.info(f'工单 {current_summary} 开始升级代码，开始时间：{start_time}')
-                upgrade_success_list, upgrade_info_list = thread_upgrade_code(wait_upgrade_list, upgrade_success_list, upgrade_info_list)
-                end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                d_logger.info(f'工单 {current_summary} 代码升级结束，结束时间：{end_time}')
-
-            # current_code_info 数据调整
-            current_code_info = [{k: v for k, v in d.items() if k != 'env'} for d in current_code_info]
+            start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            d_logger.info(f'工单 {current_summary} 开始升级代码，开始时间：{start_time}')
+            upgrade_success_list, upgrade_info_list = thread_upgrade(
+                # 待升级工程数据列表
+                wait_upgrade_list,
+                # 升级完成的工程数据列表
+                upgrade_success_list,
+                # 升级完成的工程名称列表
+                upgrade_info_list
+            )
+            end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            d_logger.info(f'工单 {current_summary} 代码升级结束，结束时间：{end_time}')
 
             # d_logger.info(current_code_info)
             # d_logger.info(upgrade_success_list)
-            # 只有全部升级成功才转换为<CodeUpgradeSuccessful>，只要有失败的升级就转换为<CodeUpgradeFailed>
-            if upgrade_success_list == current_code_info or not compare_list_info(
-                    upgrade_success_list,
-                    current_code_info):
+            # 只有全部升级成功才转换为 CodeUpgradeSuccessful，只要有失败的升级就转换为 CodeUpgradeFailed
+            if upgrade_success_list == current_code_info or \
+                    not compare_list_info(upgrade_success_list, current_code_info):
                 last_issue_obj.status = 'UAT UPGRADED'
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.init_flag['code_init_flag'] += 1
                 last_issue_obj.save()
                 self._webhook_return_data[
-                    'msg'] = f"所有CodeUpgradeSuccessful，升级工单 {current_summary} 触发转换 <CodeUpgradeSuccessful> 到状态 <UAT UPGRADED>"
+                    'msg'] = f"所有代码升级成功，升级工单 {current_summary} 触发转换 <CodeUpgradeSuccessful> 到状态 <UAT UPGRADED>"
                 self._webhook_return_data['data'] = {"已升级信息列表": upgrade_info_list}
                 # 升级结果发送邮件
                 global sql_upgrade_flag
