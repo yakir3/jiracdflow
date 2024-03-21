@@ -170,7 +170,7 @@ class CmdbAPI:
         # project_name 为 pro 结尾，不升级
         if project_name.endswith('pro') or project_name.endswith('prod'):
             return_data['status'] = True
-            return_data['msg'] = f"工程名 {project_name} 为运营工程，不处理升级"
+            return_data['msg'] = f"工程：{project_name} 为运营工程，不处理升级"
             return_data['notice_flags'] = 'PROD_PROJECT'
             return return_data
 

@@ -239,12 +239,12 @@ def thread_upgrade(
         futures = []
         # 循环待升级代码列表，调用 cmdb_obj.project_deploy 方法升级代码
         for wait_upgrade_ins in wait_upgrade_list:
-            d_logger.info(wait_upgrade_ins)
+            # d_logger.info(wait_upgrade_ins)
             future = executor.submit(cmdb_obj.project_deploy, **wait_upgrade_ins)
             futures.append(future)
         # 获取升级结果列表，根据列表状态返回升级结果
         upgrade_result_list = [future.result() for future in futures]
-        d_logger.info(upgrade_result_list)
+        # d_logger.info(upgrade_result_list)
         for upgrade_result in upgrade_result_list:
             # cmdb_obj.project_deploy 返回结果
             upgrade_status = upgrade_result['status']
@@ -257,18 +257,18 @@ def thread_upgrade(
 
             # 多进程方式升级成功
             if upgrade_status:
-                # 日志记录升级消息
-                d_logger.info(upgrade_msg)
                 # 升级成功的数据放入 upgrade_success_list
                 upgrade_success_list.append(upgrade_data)
                 # 仅 SQL 升级
                 if upgrade_notice_flags == 'ONLY_SQL':
                     upgrade_info_list.append(None)
-                # # 运营工程不做升级
-                # elif upgrade_notice_flags == 'PROD_PROJECT':
-                #     d_logger.info(upgrade_msg)
+                # 运营工程不做升级
+                elif upgrade_notice_flags == 'PROD_PROJECT':
+                    pass
                 else:
                     upgrade_info_list.append(f"{upgrade_project_name:25s} 升级版本: {upgrade_project_version}")
+                # 日志记录升级消息
+                d_logger.info(upgrade_msg)
             # 多进程方式升级失败，继续尝试2次升级重试
             else:
                 # 日志记录升级错误消息
