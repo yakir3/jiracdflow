@@ -3,7 +3,7 @@ BUILDPATH=$(CURDIR)
 
 # parameters
 GIT_COMMIT:=$(shell git rev-parse --short HEAD)
-PROJECT_NAME=devops_tools
+PROJECT_NAME=jiracdflow
 VERSION?=v1
 
 LOCAL_IMAGE_NAME=${PROJECT_NAME}:${VERSION}

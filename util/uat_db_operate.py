@@ -1,4 +1,4 @@
-#!/opt/py-project/devops_tools/venv/bin/python
+#!/opt/py-project/jiracdflow/venv/bin/python
 import sys
 import time
 from ast import literal_eval
