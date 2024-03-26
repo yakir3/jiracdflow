@@ -18,23 +18,23 @@ poetry env use `which python3.10`
 poetry install
 
 
-# APP init
-# logs dir
-mkdir logs
-# migrate db
+# Project init
+# Create logs dir
+mkdir ./logs
+# Init and migrate db
 python manage.py makemigrations
 python manage.py migrate
-## dev
-#python manage.py runserver 0.0.0.0:8888
-## prod
-#uwsgi --ini uwsgi.ini
-#tail -f logs/uwsgi.log
+# Init config
+mv config/config.yaml.default config/config.yaml
 
 
-# Virtualenv start
+# Virtualenv start project
 # Option 1
 poetry shell
+#python manage.py runserver 0.0.0.0:8080 # for dev
 uwsgi --ini uwsgi.ini
-# Option 2
+# Option 2: for prod
+#poetry run python manage.py runserver 0.0.0.0:8888 # for dev
 poetry run uwsgi --ini uwsgi.ini
+tail -f logs/uwsgi.log
 ```
