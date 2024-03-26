@@ -74,10 +74,10 @@ def get_sql_commit_data(
         # audit_timestamp = re.findall(' timestamp[,\s]', sql_content_value)
         # assert not audit_timestamp, "工单内容存在 timestamp 属性定义，不提交工单，检查 sql 内容。"
 
+        # 生成提交 Archery 工单数据主逻辑
         # 提交 sql 序号，按顺序执行 sql
         seq_index = current_sql_info.index(sql_data) + 1
-        # DB 所属资源组名称：QC | ISLOT
-        svn_path_up = svn_path.upper()
+        # DB 所属资源组名称：QC | ISLOT | ISAGENT
         db_name = None
         # yakir_test
         if 'yakir' in svn_file:
@@ -104,7 +104,7 @@ def get_sql_commit_data(
                 'rex_merchant_fpb': 'fpb-merchant',
                 'rex_merchant_psl': 'psl-merchant'
             }
-            # sql_resource_name = re.split(r'[/_]\s*', svn_path_up)[2]
+            # sql_resource_name = re.split(r'[/_]\s*', svn_path.upper())[2]
             sql_resource_name = 'QC'
             # 取出数据库实例名称
             svn_path_value_list = svn_path.split('/')
@@ -152,7 +152,14 @@ def get_sql_commit_data(
             elif 'ipachinko-merchant' in svn_path:
                 sql_instance_name = 'ipachinko-merchant'
                 db_name = 'ilup04'
+            elif 'is03-cashsite' in svn_path:
+                sql_instance_name = 'is03-cashsite'
+                db_name = 'ilup05'
+            elif 'bw01-cashsite' in svn_path:
+                sql_instance_name = 'bw01-cashsite'
+                db_name = 'ilup06'
             bk_commit_data = None
+            # d_logger.info("debug" + sql_resource_name)
         else:
             error_msg = "svn 路径不包含产品关键字路径，请确认是否正确输入 svn 路径。"
             d_logger.error(f"{error_msg}")

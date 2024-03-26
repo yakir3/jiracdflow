@@ -295,12 +295,12 @@ class CICDFlowView(APIView):
                 ac_project_list = [
                     'A22',
                     'QC',
-                    'TCBS',
                     'ISLOT',
-                    'GGK',
                     'FPB',
                     'IS01',
-                    'IS02'
+                    'IS02',
+                    'IS03',
+                    'BW01'
                 ]
                 current_project = cicdflow_ser_data['project']
                 if current_project in ac_project_list:
