@@ -6,7 +6,7 @@ import sys
 
 def main():
     project_env = os.environ.get('PROJECT_ENV', 'dev')
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'devops_tools.settings.{}'.format(project_env))
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jiracdflow.settings.{}'.format(project_env))
 
     try:
         from django.core.management import execute_from_command_line
