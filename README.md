@@ -8,7 +8,8 @@ curl -sSL https://install.python-poetry.org | python -
 
 
 # Create Virtualenv
-poetry env use /usr/bin/python3.10
+#poetry env use /usr/bin/python3.10
+poetry env use `which python3.10`
 
 
 # Install denpencies
