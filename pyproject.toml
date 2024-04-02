@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "devops-tools"
+name = "jiracdflow"
 version = "0.1.0"
-description = "cdflow tool"
+description = "jiracdflow"
 authors = ["yakir"]
 license = "MIT"
 readme = "README.md"

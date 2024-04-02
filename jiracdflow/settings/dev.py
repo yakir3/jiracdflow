@@ -16,7 +16,8 @@ DEBUG = True
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'jiracdflow',
+        #'NAME': 'jiracdflow',
+        'NAME': 'devops_tools',
         'USER': 'root',
         'PASSWORD': '1qaz@WSX',
         'HOST': '127.0.0.1',

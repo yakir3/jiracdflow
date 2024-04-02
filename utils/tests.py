@@ -16,12 +16,9 @@ cmdb_obj = CmdbAPI()
 # code_data = {'svn_path': '/qc/rex-user-center', 'code_version': 5719, 'svn_version': 5719, 'tag': 'v2', 'project_name': 'rex-user-center'}
 # code_data = {'svn_path': '/qc/rex-task-center', 'code_version': 5103, 'svn_version': 5103, 'tag': 'v4', 'project_name': 'rex-task-center'}
 # pprint(cmdb_obj.upgrade(**code_data))
-# pprint(cmdb_obj.search_by_project_name(project_name='rex-frontend-stable', tag=''))
-# pprint(cmdb_obj.search_by_project_name(project_name='rex-prom-center', tag='v4'))
 # pprint(cmdb_obj.search_by_project_name(project_name='rex-admin-web', tag='v1'))
 # pprint(cmdb_obj.search_by_project_name(project_name='rex-admin', tag='v2'))
 # pprint(cmdb_obj.search_by_project_name(project_name='frontend-isagent-web', tag='v2'))
-# pprint(cmdb_obj.search_by_project_name(project_name='backend-isagent-report', tag=''))
 # pprint(
 #     cmdb_obj.upgrade_by_project_name(
 #         project_name='rex-admin',
@@ -32,29 +29,29 @@ cmdb_obj = CmdbAPI()
 # )
 # pprint(
 #     cmdb_obj.project_deploy(
-#         project_name='rex-frontend-stable-pro',
+#         project_name='frontend-isagent-web',
 #         tag='',
-#         svn_path='/qc/rex-frontend-stable/prod',
-#         svn_version='5804',
-#         code_version='5804'
+#         svn_path=None,
+#         svn_version='e0a3866f7e62e38222b137aa8389d8de516fa5ed',
+#         code_version='e0a3866f7e62e38222b137aa8389d8de516fa5ed'
 #     )
 # )
 
-from cicdflow_util import thread_upgrade
-wait_upgrade_list = [
-    {'svn_path': '/qc/rex-task-center', 'code_version': 5103, 'svn_version': 5103, 'tag': '', 'project_name': 'rex-task-center'},
-    {'svn_path': '/qc/rex-frontend-stable/prod', 'code_version': 5899, 'svn_version': 5899, 'tag': '', 'project_name': 'rex-frontend-stable-pro'}
-]
-upgrade_success_list = []
-upgrade_info_list = []
-upgrade_success_list, upgrade_info_list = thread_upgrade(
-    # 待升级工程数据列表
-    wait_upgrade_list,
-    # 升级完成的工程数据列表
-    upgrade_success_list,
-    # 升级完成的工程名称列表
-    upgrade_info_list
-)
-print(upgrade_success_list)
-print('======================')
-print(upgrade_info_list)
+# from cicdflow_util import thread_upgrade
+# wait_upgrade_list = [
+#     {'svn_path': '/qc/rex-task-center', 'code_version': 5103, 'svn_version': 5103, 'tag': '', 'project_name': 'rex-task-center'},
+#     {'svn_path': '/qc/rex-frontend-stable/prod', 'code_version': 5899, 'svn_version': 5899, 'tag': '', 'project_name': 'rex-frontend-stable-pro'}
+# ]
+# upgrade_success_list = []
+# upgrade_info_list = []
+# upgrade_success_list, upgrade_info_list = thread_upgrade(
+#     # 待升级工程数据列表
+#     wait_upgrade_list,
+#     # 升级完成的工程数据列表
+#     upgrade_success_list,
+#     # 升级完成的工程名称列表
+#     upgrade_info_list
+# )
+# print(upgrade_success_list)
+# print('======================')
+# print(upgrade_info_list)

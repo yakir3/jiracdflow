@@ -556,19 +556,3 @@ class CheckVersion(APIView):
             return_data['code'] = 10500
             return_data['msg'] = f"接口异常，异常原因： {err.__str__()}"
         return Response(data=return_data, status=status.HTTP_200_OK)
-
-
-from . import log_test
-class YakirTest(APIView):
-    def get(self, request, *args, **kwargs):
-        return_data = {
-            'code': 10200,
-            'msg': 'log test to app.log',
-            'data': list()
-        }
-        try:
-            log_test.log_test()
-        except Exception as err:
-            return_data['code'] = 10500
-            return_data['msg'] = f"接口异常，异常原因： {err.__str__()}"
-        return Response(data=return_data, status=status.HTTP_200_OK)
