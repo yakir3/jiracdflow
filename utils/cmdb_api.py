@@ -117,6 +117,7 @@ class CmdbAPI:
                 else:
                     return_data['msg'] = f'查询 CMDB <升级发布>接口返回非200状态, 返回数据 {cmdb_req.text}'
         except Exception as err:
+            return_data['status'] = False
             return_data['msg'] = f'查询<升级发布>工程 ID 异常，异常原因：{err}'
         return return_data
 

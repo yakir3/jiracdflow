@@ -17,7 +17,7 @@ cmdb_obj = CmdbAPI()
 # code_data = {'svn_path': '/qc/rex-task-center', 'code_version': 5103, 'svn_version': 5103, 'tag': 'v4', 'project_name': 'rex-task-center'}
 # pprint(cmdb_obj.upgrade(**code_data))
 # pprint(cmdb_obj.search_by_project_name(project_name='rex-admin-web', tag='v1'))
-# pprint(cmdb_obj.search_by_project_name(project_name='rex-admin', tag='v2'))
+pprint(cmdb_obj.search_by_project_name(project_name='frontend-test-xxx', tag='v2'))
 # pprint(cmdb_obj.search_by_project_name(project_name='frontend-isagent-web', tag='v2'))
 # pprint(
 #     cmdb_obj.upgrade_by_project_name(
@@ -29,11 +29,11 @@ cmdb_obj = CmdbAPI()
 # )
 # pprint(
 #     cmdb_obj.project_deploy(
-#         project_name='frontend-isagent-web',
+#         project_name='frontend-test-xxx',
 #         tag='',
 #         svn_path=None,
-#         svn_version='e0a3866f7e62e38222b137aa8389d8de516fa5ed',
-#         code_version='e0a3866f7e62e38222b137aa8389d8de516fa5ed'
+#         svn_version='xxx111',
+#         code_version='xxx111'
 #     )
 # )
 
