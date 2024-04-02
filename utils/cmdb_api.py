@@ -216,6 +216,7 @@ class CmdbAPI:
                 return_data['notice_flags'] = notice_flags
             return return_data
         except Exception as err:
+            return_data['status'] = False
             return_data['msg'] = f'调用 CMDB <升级发布> 异常，异常原因：{err.__str__()}'
         return return_data
 
