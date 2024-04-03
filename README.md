@@ -29,12 +29,17 @@ mv config/config.yaml.default config/config.yaml
 
 
 # Virtualenv start project
-# Option 1
+## Option 1
+# for dev
 poetry shell
-#python manage.py runserver 0.0.0.0:8080 # for dev
+python manage.py runserver 0.0.0.0:8080
+# for prod
+poetry shell
 uwsgi --ini uwsgi.ini
-# Option 2: for prod
-#poetry run python manage.py runserver 0.0.0.0:8888 # for dev
+## Option 2
+# for dev
+poetry run python manage.py runserver 0.0.0.0:8888
+# for prod
 poetry run uwsgi --ini uwsgi.ini
 tail -f logs/uwsgi.log
 ```

@@ -129,10 +129,11 @@ def get_sql_commit_data(
             if 'liveslot-sql-hotfix' in svn_path:
                 db_name = 'hotfix'
             elif 'liveslot-sql-v2' in svn_path:
-                #db_name = 'ilum02'
                 db_name = 'hotfix'
             elif 'liveslot-sql-v3' in svn_path:
                 db_name = 'ilum03'
+            elif 'liveslot-sql-v4' in svn_path:
+                db_name = 'ilum05'
             elif 'pachinko-sql' in svn_path:
                 sql_instance_name = 'pachinko-uat'
                 db_name = 'ilum02'

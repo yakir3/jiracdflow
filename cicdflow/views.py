@@ -384,7 +384,7 @@ class CICDFlowView(APIView):
             return Response(data=return_data, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as err:
             return_data['status'] = False
-            return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err.__str__()}"
+            return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
