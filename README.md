@@ -6,10 +6,10 @@
 mkdir ./volume
 
 docker run --name django-mysql \
-  -e MYSQL_ROOT_PASSWORD=1qaz@WSX \
+  -e MYSQL_ROOT_PASSWORD=123qwe \
   -e MYSQL_DATABASE=jiracdflow \
   -p 3307:3306 \
-  -v ./volume/mysql_data:/var/lib/mysql \
+  -v $(pwd)/volume/mysql_data:/var/lib/mysql \
   -d mysql:5.7 --character-set-server=utf8mb4
 ```
 
@@ -34,7 +34,7 @@ poetry install
 # Create logs dir
 mkdir ./logs
 # Init config
-mv config/config.yaml.default config/config.yaml
+cp config/config.yaml.default config/config.yaml
 
 
 # Virtualenv start project
@@ -43,21 +43,27 @@ mv config/config.yaml.default config/config.yaml
 poetry shell
 python manage.py makemigrations
 python manage.py migrate
+# python manage.py collectstatic --noinput
 python manage.py runserver 0.0.0.0:8080
 # for prod
+export PROJECT_ENV=prod
 poetry shell
 python manage.py makemigrations
 python manage.py migrate
+# python manage.py collectstatic --noinput
 uwsgi --ini uwsgi.ini
 
 ## Option 2
 # for dev
 poetry run python manage.py makemigrations
 poetry run python manage.py migrate
+# poetry run python manage.py collectstatic --noinput
 poetry run python manage.py runserver 0.0.0.0:8888
 # for prod
+export PROJECT_ENV=prod
 poetry run python manage.py makemigrations
 poetry run python manage.py migrate
+# poetry run python manage.py collectstatic --noinput
 poetry run uwsgi --ini uwsgi.ini
 tail -f logs/uwsgi.log
 ```
