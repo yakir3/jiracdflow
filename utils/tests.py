@@ -14,19 +14,7 @@ from pprint import pprint
 from utils.cmdb_api import CmdbAPI
 cmdb_obj = CmdbAPI()
 # code_data = {'svn_path': '/qc/rex-user-center', 'code_version': 5719, 'svn_version': 5719, 'tag': 'v2', 'project_name': 'rex-user-center'}
-# code_data = {'svn_path': '/qc/rex-task-center', 'code_version': 5103, 'svn_version': 5103, 'tag': 'v4', 'project_name': 'rex-task-center'}
-# pprint(cmdb_obj.upgrade(**code_data))
-# pprint(cmdb_obj.search_by_project_name(project_name='rex-admin-web', tag='v1'))
-pprint(cmdb_obj.search_by_project_name(project_name='frontend-test-xxx', tag='v2'))
 # pprint(cmdb_obj.search_by_project_name(project_name='frontend-isagent-web', tag='v2'))
-# pprint(
-#     cmdb_obj.upgrade_by_project_name(
-#         project_name='rex-admin',
-#         tag='v2',
-#         svn_version='4472',
-#         code_version=None
-#     )
-# )
 # pprint(
 #     cmdb_obj.project_deploy(
 #         project_name='frontend-test-xxx',
@@ -41,7 +29,7 @@ pprint(cmdb_obj.search_by_project_name(project_name='frontend-test-xxx', tag='v2
 # wait_upgrade_list = [
 #     {'svn_path': '/qc/rex-task-center', 'code_version': 5103, 'svn_version': 5103, 'tag': '', 'project_name': 'rex-task-center'},
 #     {'svn_path': '/qc/rex-frontend-stable/prod', 'code_version': 5899, 'svn_version': 5899, 'tag': '', 'project_name': 'rex-frontend-stable-pro'}
-# ]
+# # ]
 # upgrade_success_list = []
 # upgrade_info_list = []
 # upgrade_success_list, upgrade_info_list = thread_upgrade(
