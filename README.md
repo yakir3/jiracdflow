@@ -5,7 +5,7 @@
 ```shell
 mkdir ./volume
 
-docker run --name django-mysql \
+docker run --name jiracdflow-mysql \
   -e MYSQL_ROOT_PASSWORD=123qwe \
   -e MYSQL_DATABASE=jiracdflow \
   -p 3307:3306 \
