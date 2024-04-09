@@ -6,6 +6,7 @@ from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from time import sleep
 from typing import Any
+import traceback
 
 from cicdflow.models import JiraWorkflow, SqlWorkflow
 from cicdflow.serializers import JiraWorkflowSerializer, CICDFlowSerializer, SqlWorkflowSerializer
@@ -384,7 +385,9 @@ class CICDFlowView(APIView):
             return Response(data=return_data, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as err:
             return_data['status'] = False
-            return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err}"
+            tb_str = traceback.format_exc()
+            # return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err}"
+            return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{tb_str}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
