@@ -2,10 +2,7 @@ from jira import JIRA
 from pprint import pprint
 from typing import Union, Dict
 from ast import literal_eval
-try:
-    from getconfig import GetYamlConfig
-except:
-    from util.getconfig import GetYamlConfig
+from utils.getconfig import GetYamlConfig
 
 __all__ = ['JiraWebhookData', 'JiraAPI']
 
@@ -109,9 +106,18 @@ class JiraAPI(object):
         jira_pwd  = jira_config.get('password')
         self.jira = JIRA(jira_host, auth=(jira_user,jira_pwd))
 
-    def get_issue_info(self, issue_id=None):
+    def get_issue_info(
+            self,
+            issue_id: str = None
+    ) -> Dict[str, Union[bool, str, Dict]]:
+        return_data = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
         if issue_id is None:
-            return {'status':False, 'msg': 'issue_id is None!', 'data': None}
+            return_data['msg'] = 'issue_id is None!'
+            return return_data
         try:
             # 问题域所有数据
             fields = self.jira.issue(id=issue_id).fields
@@ -135,18 +141,32 @@ class JiraAPI(object):
                 'config_info': config_info_list,
                 'code_info_list': code_info_list
             }
-            return {'status': True, 'msg': '查询完毕', 'data': issue_info}
-        except Exception as e:
-            return {'status': False, 'msg': '查询失败', 'data': e}
+            return_data['status'] = True
+            return_data['msg'] = 'Jira 工单查询完成'
+            return_data['data'] = issue_info
+        except Exception as err:
+            return_data['msg'] = f"Jira 工单查询失败异常，异常原因: {err.__str__()}"
+        return return_data
 
-    def change_transition(self,issue_id=None,change_id=None):
-        if issue_id == None or change_id == None:
-            return {'status':False,'msg':'issue_id or change_id is None!','data':None}
+    def change_transition(
+            self,
+            issue_id: str = None,
+            change_id: str = None
+    ) -> Dict[str, str]:
+        return_data = {
+            'status': False,
+            'msg': '',
+        }
+        if issue_id is None or change_id is None:
+            return_data['msg'] = 'issue_id or change_id is None!'
+            return return_data
         try:
             res = self.jira.transition_issue(self.jira.issue(id=issue_id), change_id)
-            return {'status':True,'msg':'变更完毕','data':''}
-        except Exception as e:
-            return {'status': False, 'msg': '变更失败', 'data': e}
+            return_data['status'] = True
+            return_data['msg'] = 'Jira 工单变更完成'
+        except Exception as err:
+            return_data['msg'] = f"Jira 工单变更异常，异常原因: {err.__str__()}"
+        return return_data
 
     def issue_create(self,args=dict):
         try:

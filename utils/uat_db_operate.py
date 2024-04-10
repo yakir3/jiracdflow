@@ -6,7 +6,7 @@ from ast import literal_eval
 sys.path.append("..")
 from typing import Dict, List, Union, Any
 
-from util.archery_api import ArcheryAPI
+from utils.archery_api import ArcheryAPI
 archery_obj = ArcheryAPI()
 
 # Archery 交互操作：按顺序提交、审核、执行 工单
@@ -72,7 +72,7 @@ WHERE rc.merchant_id = '{merchant_id}' and rc.login_name IN ({username_str});
         time.sleep(10)
 
         # # 审核 & 执行都无出错，查询工单结果，返回数据
-        select_res = archery_obj.get_workflows(args={'id': wid})
+        select_res = archery_obj.get_workflows(w_id=wid)
         if not select_res['status']:
             return select_res
 
@@ -147,7 +147,7 @@ update r_agent_ext_config set cpa_remaining_amount = 0 where id != 1;
         time.sleep(10)
 
         # # 审核 & 执行都无出错，查询工单结果，返回数据
-        select_res = archery_obj.get_workflows(args={'id': wid})
+        select_res = archery_obj.get_workflows(w_id=wid)
         if not select_res['status']:
             return select_res
 

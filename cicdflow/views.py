@@ -6,10 +6,11 @@ from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from time import sleep
 from typing import Any
+import traceback
 
 from cicdflow.models import JiraWorkflow, SqlWorkflow
 from cicdflow.serializers import JiraWorkflowSerializer, CICDFlowSerializer, SqlWorkflowSerializer
-from util.cicdflow_util import JiraEventWebhookAPI, JiraAPI
+from utils.cicdflow_util import JiraEventWebhookAPI, JiraAPI
 import logging
 # c_logger = logging.getLogger('console_logger')
 d_logger = logging.getLogger('default_logger')
@@ -98,8 +99,8 @@ class CICDFlowView(APIView):
                 sql_info_list.append(tmp_dict)
             else:
                 # 引入 jira_api 与 archery_api
-                from util.jira_api import JiraAPI
-                from util.archery_api import ArcheryAPI
+                from utils.jira_api import JiraAPI
+                from utils.archery_api import ArcheryAPI
                 jira_api_obj = JiraAPI()
                 archery_obj = ArcheryAPI()
 
@@ -140,7 +141,7 @@ class CICDFlowView(APIView):
                     w_status = sql_item.get('w_status')
                     # sql_info 工单存在 exception 状态时，从 archery_api 接口获取 errormessage
                     if w_status == 'workflow_exception':
-                        select_result = archery_obj.get_workflows(args={'id': w_id})
+                        select_result = archery_obj.get_workflows(w_id=w_id)
                         errormessage = select_result['data'][0]['execute_result'][0]['errormessage']
                     else:
                         errormessage = ''
@@ -295,12 +296,12 @@ class CICDFlowView(APIView):
                 ac_project_list = [
                     'A22',
                     'QC',
-                    'TCBS',
                     'ISLOT',
-                    'GGK',
                     'FPB',
                     'IS01',
-                    'IS02'
+                    'IS02',
+                    'IS03',
+                    'BW01'
                 ]
                 current_project = cicdflow_ser_data['project']
                 if current_project in ac_project_list:
@@ -320,7 +321,7 @@ class CICDFlowView(APIView):
                     issue_status = jira_issue_obj.status
                     # 判断 issue 状态是否为 <SQL PENDING> 或 <UAT UPGRADED>，非此状态抛出异常，不允许更新 issue 数据
                     if issue_status in ['UAT UPGRADED']:
-                        d_logger.debug(f"工单：{current_summary} 状态为 <UAT UPGRADED>，正常流转流程")
+                        d_logger.info(f"工单：{current_summary} 状态为 <UAT UPGRADED>，正常流转流程")
                         trans_result = jira_api_obj.change_transition(issue_key, 'StartUpgradeAgain')
                         if not trans_result['status']:
                             return_data['msg'] = f"已存在 Jira 工单，转换工单状态失败，错误原因：{trans_result['data']}"
@@ -328,7 +329,7 @@ class CICDFlowView(APIView):
                         # 从 <UAT UPGRADED> 状态变更，开始迭代升级
                         else:
                             return_data['status'] = True
-                            return_data['msg'] = '已存在 Jira 工单，转换工单状态到<StartUpgradeAgain>，开始完整迭代升级流程。'
+                            return_data['msg'] = '已存在 Jira 工单，转换工单状态到 <StartUpgradeAgain>，开始完整迭代升级流程。'
                             return_data['jira_issue_key'] = issue_key
                             d_logger.info(return_data)
                     # SQL PENDING 状态数据有变化时会自动触发 webhook，无需人为调用 change_transition 方法变更状态
@@ -384,7 +385,9 @@ class CICDFlowView(APIView):
             return Response(data=return_data, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as err:
             return_data['status'] = False
-            return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err.__str__()}"
+            tb_str = traceback.format_exc()
+            # return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{err}"
+            return_data['msg'] = f"升级工单新建或更新到 Jira 异常，异常原因：{tb_str}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -516,7 +519,7 @@ class CheckVersion(APIView):
 
             # 获取工单实例
             jira_obj = JiraWorkflow.objects.get(summary=summary)
-            from util.cmdb_api import CmdbAPI
+            from utils.cmdb_api import CmdbAPI
             cmdb = CmdbAPI()
 
             # 判断工单状态
@@ -552,22 +555,6 @@ class CheckVersion(APIView):
         except (JiraWorkflow.DoesNotExist, SqlWorkflow.DoesNotExist) as err:
             return_data['code'] = 10404
             return_data['msg'] = f"工单编号数据不存在，错误内容：{err.__str__()}"
-        except Exception as err:
-            return_data['code'] = 10500
-            return_data['msg'] = f"接口异常，异常原因： {err.__str__()}"
-        return Response(data=return_data, status=status.HTTP_200_OK)
-
-
-from . import log_test
-class YakirTest(APIView):
-    def get(self, request, *args, **kwargs):
-        return_data = {
-            'code': 10200,
-            'msg': 'log test to app.log',
-            'data': list()
-        }
-        try:
-            log_test.log_test()
         except Exception as err:
             return_data['code'] = 10500
             return_data['msg'] = f"接口异常，异常原因： {err.__str__()}"
