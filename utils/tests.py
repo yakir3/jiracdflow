@@ -43,3 +43,9 @@ cmdb_obj = CmdbAPI()
 # print(upgrade_success_list)
 # print('======================')
 # print(upgrade_info_list)
+
+# Jira
+from cicdflow_util import JiraAPI
+jira_obj = JiraAPI()
+res = jira_obj.get_issue_info(issue_id=28021)
+pprint(res)

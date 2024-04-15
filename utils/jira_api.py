@@ -1,5 +1,4 @@
 from jira import JIRA
-from pprint import pprint
 from typing import Union, Dict
 from ast import literal_eval
 from utils.getconfig import GetYamlConfig
@@ -105,11 +104,6 @@ class JiraAPI(object):
         self.jira_host = jira_config.get('host')
         self.jira_user = jira_config.get('user')
         self.jira_pwd  = jira_config.get('password')
-        self.return_data = {
-            'status': False,
-            'msg': '',
-            'data': {}
-        }
 
     def _jira_login(self):
         self.jira = JIRA(self.jira_host, auth=(self.jira_user, self.jira_pwd))
@@ -119,34 +113,32 @@ class JiraAPI(object):
             self,
             issue_id: str = None
     ) -> Dict[str, Union[bool, str, Dict]]:
-        jira_obj = self._jira_login()
-        
-        if issue_id is None:
-            self.return_data['msg'] = 'issue_id is None!'
-            return self.return_data
+        return_data = {
+            'status': False,
+            'msg': '',
+            'data': {}
+        }
+
         try:
+            jira_obj = self._jira_login()
+
             # 问题域所有数据
             fields = jira_obj.issue(id=issue_id).fields
-
-            # 获取升级数据
-            sql_info_list = literal_eval(fields.customfield_10201)
-            apollo_info_list = literal_eval(fields.customfield_10104)
-            config_info_list = literal_eval(fields.customfield_10100)
-            code_info_list = literal_eval(fields.customfield_10103)
+            print(fields.customfield_11108)
+            print(type(fields.customfield_11108))
 
             # 返回 issue 数据
             issue_info = {
                 'issue_id': issue_id,
-                'title': fields.summary,
-                'status': fields.status.name,
-                # 'attachment_data': attachment_data,
-                'sql_info': sql_info_list,
-                'apollo_info': apollo_info_list,
-                'config_info': config_info_list,
-                'code_info_list': code_info_list
+                'summary': fields.summary,
+                'issue_status': fields.status.name,
+                'sql_info': fields.customfield_11108,
+                'nacos_info': fields.customfield_11109,
+                'config_info': fields.customfield_11110,
+                'code_info_list': fields.customfield_11112
             }
             return_data['status'] = True
-            return_data['msg'] = 'Jira 工单查询完成'
+            return_data['msg'] = 'Jira 工单查询成功。'
             return_data['data'] = issue_info
         except Exception as err:
             return_data['msg'] = f"Jira 工单查询失败异常，异常原因: {err.__str__()}"
