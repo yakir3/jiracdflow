@@ -3,27 +3,27 @@ import sys
 sys.path.append("..")
 from pprint import pprint
 
+
 # Archery
 # from utils.archery_api import ArcheryAPI
-# archery_obj = ArcheryAPI()
+# archery_obj = ArcheryAPI(main_url="https://uat-archery.opsre.net/api")
+# # pprint(archery_obj.get_workflows(w_id=303))
 # pprint(archery_obj.get_resource_groups())
 # pprint(archery_obj.get_instances(instance_name='isagent-report'))
-# pprint(archery_obj.get_workflows(w_id=303))
+
 
 # CMDB
-from utils.cmdb_api import CmdbAPI
-cmdb_obj = CmdbAPI()
-# code_data = {'svn_path': '/qc/rex-user-center', 'code_version': 5719, 'svn_version': 5719, 'tag': 'v2', 'project_name': 'rex-user-center'}
-# pprint(cmdb_obj.search_by_project_name(project_name='frontend-isagent-web', tag='v2'))
+# from utils.cmdb_api import CmdbAPI
+# cmdb_obj = CmdbAPI()
+# pprint(cmdb_obj.search_by_project_name(project_name='backend-islot-office-api', tag='v3'))
 # pprint(
 #     cmdb_obj.project_deploy(
-#         project_name='frontend-test-xxx',
-#         tag='',
-#         svn_path=None,
-#         svn_version='xxx111',
-#         code_version='xxx111'
+#         project_name='backend-islot-office-api',
+#         tag='v3',
+#         code_version='3404d8375d3b278c325a9a8ffc39219792be74ff'
 #     )
 # )
+
 
 # from cicdflow_util import thread_upgrade
 # wait_upgrade_list = [
@@ -44,8 +44,9 @@ cmdb_obj = CmdbAPI()
 # print('======================')
 # print(upgrade_info_list)
 
+
 # Jira
-from cicdflow_util import JiraAPI
-jira_obj = JiraAPI()
-res = jira_obj.get_issue_info(issue_id=28021)
-pprint(res)
+# from utils.jira_api import JiraAPI
+# jira_obj = JiraAPI()
+# pprint(jira_obj.get_issue_info(issue_id=28021))
+# pprint(jira_obj.change_transition('UP-7', 'ToUpgradeUAT'))

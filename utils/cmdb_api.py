@@ -6,57 +6,41 @@ from typing import Dict, List, Union, Any, Tuple
 
 __all__ = ['CmdbAPI']
 
-# 获取 JIRA 配置信息
-cmdb_config = GetYamlConfig().get_config('CMDB')
+
 
 class CmdbAPI:
-    def __init__(self, config=cmdb_config):
-        self.search_url = config.get('search_url')
-        self.upgrade_url = config.get('upgrade_url')
-        self.upgrade_v2_url = config.get('upgrade_v2_url')
-        self.domain = config.get('domain')
-        self.token = config.get('token')
-        self.headers = {
-            'content-type':'application/json',
-            'access-token': self.token,
-        }
-
-    def search_info(
+    def __init__(
             self,
-            svn_path: str = None,
-    ) -> Dict:
-        return_data = {
-            'status': True,
-            'msg': '',
-            'data': dict()
-        }
-        try:
-            svn_path = svn_path.lower()
-            data = {
-                "page": 1,
-                "size": 50,
-                "svn_path": svn_path,
-            }
-            if svn_path.startswith('/'): svn_path = svn_path[1:]
-            cmdb_req = requests.get(url=self.search_url, data=json.dumps(data), headers=self.headers)
-            assert cmdb_req.status_code == 200, 'cmdb interface returns status code is not 200!'
+            main_url: str = "https://cmdb.opsre.net",
+            token: str = None
+    ):
+        self.search_url = main_url + "/api/upgrade_release_vmc"
+        self.upgrade_url = main_url + "/api/upgrade/upgrade/"
+        self.upgrade_v2_url = main_url + "/api/upgrade/upgrade/v2/"
 
-            # get information by cmdb
-            cmdb_result = cmdb_req.json()
-            project_name = [ x['project']['name'] for x in cmdb_result['data']['items']if 'UAT' not in x['project']['name'] ][0]
-            project_version = [ x['arg'] for x in cmdb_result['data']['items'] if 'UAT' not in x['project']['name'] ][0]
-
-            return_data['msg'] = 'cmdb search prod project info success.'
-            return_data['data'] = {
-                'project_name': project_name,
-                'project_version': project_version
-            }
-        except Exception as err:
-            return_data['status'] = False
-            return_data['msg'] = err.__str__()
-        return return_data
+    @staticmethod
+    def _login_required(func):
+        def wrapper(self, *args, **kwargs):
+            try:
+                # 获取 CMDB 配置信息
+                cmdb_config = GetYamlConfig().get_config('CMDB')
+                token = cmdb_config.get('token')
+                self._api_headers = {
+                    'content-type': 'application/json',
+                    'access-token': token,
+                }
+                result = func(self, *args, **kwargs)
+                return result
+            except Exception as err:
+                return_data = {
+                    "status": False,
+                    "msg": f"CMDB 鉴权失败，异常原因：{err.__str__()}"
+                }
+                return return_data
+        return wrapper
 
     # 通过 project_name 查询 id，返回工程 id 用于升级
+    @_login_required
     def search_by_project_name(
             self,
             project_name: str = None,
@@ -81,7 +65,7 @@ class CmdbAPI:
                     'name': p_name
                 }
                 # 请求接口，调整数据
-                cmdb_req = requests.get(url=self.search_url, json=data, headers=self.headers)
+                cmdb_req = requests.get(url=self.search_url, json=data, headers=self._api_headers)
                 if cmdb_req.status_code == 200:
                     cmdb_req_json = cmdb_req.json()
                     return_data['status'] = True
@@ -103,7 +87,7 @@ class CmdbAPI:
                     'name': p_name
                 }
                 # 请求接口，调整真实数据
-                cmdb_req = requests.get(url=self.search_url, json=data, headers=self.headers)
+                cmdb_req = requests.get(url=self.search_url, json=data, headers=self._api_headers)
                 if cmdb_req.status_code == 200:
                     cmdb_req_json = cmdb_req.json()
                     project_items = cmdb_req_json['data']['items']
@@ -121,12 +105,11 @@ class CmdbAPI:
             return_data['msg'] = f'查询<升级发布>工程 ID 异常，异常原因：{err}'
         return return_data
 
+    @_login_required
     def project_deploy(
             self,
             project_name: str = None,
             tag: str = 'v1',
-            svn_path: str = None,
-            svn_version: str = None,
             code_version: str = None,
             env: str = 'UAT',
     ) -> Dict[str, Union[bool, str, List, Dict]]:
@@ -134,8 +117,6 @@ class CmdbAPI:
         Args:
             project_name: my-app
             tag: v1 | v2 | v3 ..
-            svn_path: /svn/path
-            svn_version: 1111 | a1b2c3
             code_version: a1b2c3
             env: UAT | PROD
         Returns:
@@ -145,8 +126,6 @@ class CmdbAPI:
                 'data': {
                     'notice_project_name': 'UAT_MY_APP_V2',
                     'project_name': 'my-app',
-                    'svn_path': None,
-                    'svn_version': '4472',
                     'code_version': None,
                     'tag': 'v2'
                 }
@@ -161,8 +140,6 @@ class CmdbAPI:
             "data": {
                 "project_name": project_name,
                 "tag": tag,
-                "svn_path": svn_path,
-                "svn_version": svn_version,
                 "code_version": code_version,
             },
             "notice_flags": None
@@ -176,7 +153,7 @@ class CmdbAPI:
             return return_data
 
         # 版本号为空字符串时，不升级代码（只升级 SQL 或配置）
-        if not svn_version and not code_version:
+        if not code_version:
             return_data['status'] = True
             return_data['msg'] = "不升级代码（升级工单只升级 SQL 或配置）"
             return_data['notice_flags'] = 'ONLY_SQL'
@@ -196,17 +173,17 @@ class CmdbAPI:
                     "branch": f'release_uat_{tag[-1]}',
                     "version": code_version,
                 }
-                cmdb_req = requests.post(url=url, json=upgrade_data, headers=self.headers)
+                cmdb_req = requests.post(url=url, json=upgrade_data, headers=self._api_headers)
             # upgrade v1 接口
             else:
                 url = self.upgrade_url + str(pid)
                 upgrade_data = {
                     'operation': 'upgrade',
-                    'arg': svn_version,
+                    'arg': code_version,
                     'size': 2000,
                     'page': 1,
                 }
-                cmdb_req = requests.get(url=url, params=upgrade_data, headers=self.headers)
+                cmdb_req = requests.get(url=url, params=upgrade_data, headers=self._api_headers)
             # 获取请求结果，返回升级数据
             if cmdb_req.status_code == 200:
                 cmdb_req_json = cmdb_req.json()

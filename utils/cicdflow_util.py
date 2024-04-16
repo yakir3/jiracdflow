@@ -11,7 +11,7 @@ from utils.jira_api import JiraWebhookData, JiraAPI
 from utils.cmdb_api import CmdbAPI
 from utils.archery_api import ArcheryAPI
 from utils.svn_client import SvnClient
-from utils.email_tool import EmailClient
+from utils.email_client import EmailClient
 from utils.pgsql_api import PostgresClient
 import logging
 d_logger = logging.getLogger('default_logger')

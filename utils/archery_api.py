@@ -4,48 +4,74 @@ from datetime import datetime,timedelta
 from ast import literal_eval
 from utils.getconfig import GetYamlConfig
 
-# 获取配置
-archery_config = GetYamlConfig().get_config('Archery')['auth']
-
 __all__ = ['ArcheryAPI']
 
 class ArcheryAPI(object):
-    def __init__(self,archery_conf=archery_config):
-        self.url = archery_conf.get('url')
-        self.token_url = archery_conf.get('token_url')
-        self.refresh_url = archery_conf.get('refresh_url')
-        self.verify_url = archery_conf.get('verify_url')
-        self.resource_group_url = archery_conf.get('resource_group_url')
-        self.instance_url = archery_conf.get('instance_url')
-        self.get_workflow_url = archery_conf.get('get_workflow_url')
-        self.sql_run_max_time = 3 # 单位day
-        self._username = archery_conf.get('username')
-        self._password = archery_conf.get('password')
-        self.headers = {
-            'content-type' : 'application/json',
+    def __init__(
+            self,
+            username: str = None,
+            password: str = None,
+            main_url: str = "https://uat-archery.opsre.net/api",
+            executable_time_range: int = 3
+    ):
+        self._username = username
+        self._password = password
+        self.token_url = main_url + "/auth/token/"
+        self.refresh_url = main_url + "/auth/token/refresh/"
+        self.verify_url = main_url + "/auth/token/verify/"
+        self.resource_group_url = main_url + "/v1/user/resourcegroup/"
+        self.instance_url = main_url + "/v1/instance/"
+        self.workflow_url = main_url + "/v1/workflow/"
+        self.audit_workflow_url = main_url + "/v1/workflow/audit/"
+        self.execute_workflow_url = main_url + "/v1/workflow/execute/"
+        self.executable_time_range = executable_time_range
+        self._api_headers = {
+            "content-type": "application/json",
+            "authorization": ""
         }
-        self.login_headers = {
-            'content-type' : 'application/x-www-form-urlencoded; charset=UTF-8',
-        }
-        # init token
-        token_data = {
-            'username': self._username,
-            'password': self._password,
-        }
-        token_res_data = requests.post(url=self.token_url, data=token_data, headers=self.login_headers).json()
-        refresh_data = {
-            'refresh': token_res_data['refresh']
-        }
-        refresh_res_data = requests.post(url=self.refresh_url, data=refresh_data, headers=self.login_headers).json()
-        token = 'Bearer ' + refresh_res_data['access']
-        self.headers['authorization'] = token
 
+    @staticmethod
+    def _login_required(func):
+        def wrapper(self, *args, **kwargs):
+            try:
+                # 获取 Archery 配置
+                archery_config = GetYamlConfig().get_config('Archery')
+                username = self._username if self._username else archery_config.get('username')
+                password = self._password if self._password else archery_config.get('password')
+
+                login_headers = {
+                    'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                }
+                token_req_data = {
+                    'username': username,
+                    'password': password,
+                }
+                # init login
+                token_res_data = requests.post(url=self.token_url, data=token_req_data, headers=login_headers).json()
+                refresh_req_data = {
+                    'refresh': token_res_data['refresh']
+                }
+                # get refresh token
+                refresh_res_data = requests.post(url=self.refresh_url, data=refresh_req_data, headers=login_headers).json()
+                _api_token = 'Bearer ' + refresh_res_data['access']
+                self._api_headers['authorization'] = _api_token
+                result = func(self, *args, **kwargs)
+                return result
+            except Exception as err:
+                return_data = {
+                    "status": False,
+                    "msg": f"登录 Archery 失败，异常原因：{err.__str__()}"
+                }
+                return return_data
+        return wrapper
+
+    @_login_required
     def get_workflows(
             self,
             w_id: int = 0,
             w_status: str = None,
             workflow_name: str = None,
-            size: int = 100
+            size: int = 100,
     ) -> Dict[str, Union[bool, str, Dict]]:
         return_data = {
             'status': False,
@@ -59,7 +85,7 @@ class ArcheryAPI(object):
             'size': size
         }
         try:
-            res = requests.get(url=self.get_workflow_url, params=data, headers=self.headers)
+            res = requests.get(url=self.workflow_url, params=data, headers=self._api_headers)
             if res.status_code == 200:
                 res_data = res.json()
                 if res_data['count'] == 0:
@@ -77,7 +103,7 @@ class ArcheryAPI(object):
                             execute_result = ""
                         tmp_list.append({'name': name, 'id': wid, 'status': status, 'execute_result': execute_result})
                     return_data['status'] = True
-                    return_data['msg'] = '查询工单正常返回'
+                    return_data['msg'] = '查询工单成功。'
                     return_data['data'] = tmp_list
             else:
                 return_data['msg'] = '查询工单失败，请求接口返回非200'
@@ -86,29 +112,24 @@ class ArcheryAPI(object):
             return_data['msg'] = f"提交工单异常，异常原因: {err.__str__()}"
         return return_data
 
-    def workflow_times(self):
-        now = datetime.now()
-        end_time = now + timedelta(days=self.sql_run_max_time)
-        return {
-            'run_date_start': str(now),
-            'run_date_end': str(end_time),
-        }
-
-    def get_resource_groups(self):
+    @_login_required
+    def get_resource_groups(
+            self,
+    ):
         return_data = {
             'status': False,
             'msg': '',
             'data': {}
         }
         try:
-            res = requests.get(url=self.resource_group_url, headers=self.headers)
+            res = requests.get(url=self.resource_group_url, headers=self._api_headers)
             res_data = res.json()
             if res.status_code == 200:
                 result = {
                     res_data['results'][index]['group_name']:res_data['results'][index]['group_id'] for index in range(res_data['count'])
                 }
                 return_data['status'] = True
-                return_data['msg'] = 'success'
+                return_data['msg'] = '查询资源组信息成功。'
                 return_data['data'] = result
             else:
                 return_data['msg'] = '查询资源组信息失败，请求接口返回非200'
@@ -118,7 +139,11 @@ class ArcheryAPI(object):
             return_data['msg'] = f"查询资源组信息异常，异常原因：{err}"
             return return_data
 
-    def get_instances(self, instance_name=None):
+    @_login_required
+    def get_instances(
+            self,
+            instance_name: str = None,
+    ):
         return_data = {
             'status': False,
             'msg': '',
@@ -128,7 +153,7 @@ class ArcheryAPI(object):
             data = {
                 'size': 100,  # 查询实例数量
             }
-            res = requests.get(url=self.instance_url, params=data, headers=self.headers)
+            res = requests.get(url=self.instance_url, params=data, headers=self._api_headers)
             res_data = res.json()
             if res.status_code == 200:
                 tmp_data = {}
@@ -139,7 +164,7 @@ class ArcheryAPI(object):
                     if instance_name == _instance_name:
                         tmp_data[instance_name] = {'id': instance_id, 'db_name': db_name}
                 return_data['status'] = True
-                return_data['msg'] = '查询实例信息完成'
+                return_data['msg'] = '查询实例信息成功'
                 return_data['data'] = tmp_data
             else:
                 return_data['msg'] = '查询实例信息失败, 请求查询接口响应非200'
@@ -149,6 +174,7 @@ class ArcheryAPI(object):
             return_data['msg'] = f"查询实例信息异常，异常原因：{err}"
             return return_data
 
+    @_login_required
     def commit_workflow(
             self,
             sql_index: int = 0,
@@ -186,7 +212,6 @@ class ArcheryAPI(object):
             return_data['msg'] = '提交工单失败，sql 文件内容不能为空或 None'
             return return_data
         try:
-            dates = self.workflow_times()
             # 查询 group_id
             groups_info = self.get_resource_groups()
             if resource_tag not in groups_info['data'].keys():
@@ -195,7 +220,7 @@ class ArcheryAPI(object):
                 return return_data
             else:
                 group_id = groups_info['data'][resource_tag]
-            # 查询 instance_id / db_name
+            # 查询 instance_id 和 db_name
             instance_info = self.get_instances(instance_name=instance_tag)
             if not instance_info['status']:
                 return_data['msg'] = instance_info['msg']
@@ -203,12 +228,12 @@ class ArcheryAPI(object):
                 return return_data
             else:
                 # 单实例多数据库时判断是否传 db_name
-                if db_name:
-                    db_name = db_name
-                else:
-                    db_name = instance_info['data'][instance_tag]['db_name']
+                db_name = db_name if db_name else instance_info['data'][instance_tag]['db_name']
                 instance_id = instance_info['data'][instance_tag]['id']
 
+            # req data
+            current_time = datetime.now()
+            future_time = current_time + timedelta(days=self.executable_time_range)
             data = {
                 'sql_content': sql_content,  # sql content
                 'workflow': {
@@ -221,11 +246,11 @@ class ArcheryAPI(object):
                     'db_name': db_name,  # 数据库名
                     'is_backup': is_backup,  # 是否备份
                     'engineer': engineer,  # 发起人
+                    'run_date_start': str(current_time),
+                    'run_date_end': str(future_time)
                 },
             }
-            data['workflow'] = dict(data['workflow'], **dates)
-            url = self.url + '/v1/workflow/'
-            res = requests.post(url=url, json=data, headers=self.headers)
+            res = requests.post(url=self.workflow_url, json=data, headers=self._api_headers)
             res_data = res.json()
             if res.status_code == 201:
                 # workflow_abort                工作流中止
@@ -256,6 +281,7 @@ class ArcheryAPI(object):
             return_data['msg'] = f"提交工单异常，异常原因: {err.__str__()}"
         return return_data
 
+    @_login_required
     def audit_workflow(
             self,
             engineer: str = 'cdflow',
@@ -264,7 +290,8 @@ class ArcheryAPI(object):
             # 工单类型：1-查询权限申请，2-SQL上线申请，3-数据归档申请
             workflow_type: Literal[1, 2, 3] = 2,
             # 审核类型：pass-通过，cancel-取消
-            audit_type: Literal['pass', 'cancel'] = 'pass') -> Dict:
+            audit_type: Literal['pass', 'cancel'] = 'pass',
+    ) -> Dict:
         """
         调用 Archery 接口将后台工单审核通过，进入待执行状态
         """
@@ -285,8 +312,7 @@ class ArcheryAPI(object):
                 'workflow_type': workflow_type,
                 'audit_type': audit_type
             }
-            url = self.url + '/v1/workflow/audit/'
-            res = requests.post(url=url, json=audit_data, headers=self.headers)
+            res = requests.post(url=self.audit_workflow_url, json=audit_data, headers=self._api_headers)
             if res.status_code == 200:
                 return_data['status'] = True
                 return_data['msg'] = f"API 自动审核工单通过。"
@@ -297,6 +323,7 @@ class ArcheryAPI(object):
             return_data['msg'] = f"API 自动审核工单异常，异常原因: {err.__str__()}"
         return return_data
 
+    @_login_required
     def execute_workflow(
             self,
             engineer: str = 'cdflow',
@@ -304,7 +331,8 @@ class ArcheryAPI(object):
             # 工单类型：1-查询权限申请，2-SQL上线申请，3-数据归档申请
             workflow_type: Literal[1, 2, 3] = 2,
             # 执行模式：auto-线上执行，manual-已手动执行
-            mode: Literal['auto', 'manual'] = 'auto') -> Dict:
+            mode: Literal['auto', 'manual'] = 'auto',
+    ) -> Dict:
         """
         调用 Archery 接口将后台工单自动线上执行（操作风险高，谨慎调用）
         """
@@ -320,8 +348,7 @@ class ArcheryAPI(object):
                 'workflow_type': workflow_type,
                 'mode': mode
             }
-            url = self.url + '/v1/workflow/execute/'
-            res = requests.post(url=url, json=execute_data, headers=self.headers)
+            res = requests.post(url=self.execute_workflow_url, json=execute_data, headers=self._api_headers)
             if res.status_code == 200:
                 return_data['status'] = True
                 return_data['msg'] = f"工单自动执行成功。"
