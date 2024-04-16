@@ -57,3 +57,10 @@ CMDB:
   upgrade_url: https://xxx.com
   domain: xxx.com
   token: xxx
+
+NACOS:
+  server_address: https://slnacos.opsre.net
+  username: map
+  password: acclub.io666
+  namespace: 29d881a1-70bd-4fb2-90b9-03ae5989e1d4
+  group: DEFAULT_GROUP
