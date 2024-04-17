@@ -20,12 +20,12 @@ class JiraIssue(models.Model):
     issue_status = models.CharField(verbose_name='事件当前状态', blank=False, null=False, max_length=64)
     environment = models.CharField(verbose_name='升级环境', blank=False, null=False, max_length=16)
     close_hall = models.CharField(verbose_name='升级是否需要维护', blank=False, null=False, max_length=8)
-    function_list = models.CharField(verbose_name='功能列表', blank=False, null=False, max_length=8)
+    function_list = models.TextField(verbose_name='功能列表', blank=False, null=False)
 
-    sql_info = models.JSONField(verbose_name='SQL升级信息', blank=False, null=False, default=list)
-    nacos_info = models.JSONField(verbose_name='Nacos升级信息', blank=False, null=False, default=list)
-    config_info = models.JSONField(verbose_name='配置升级信息', blank=False, null=False, default=list)
-    code_info = models.JSONField(verbose_name='代码升级信息', blank=False, null=False, default=list)
+    sql_info = models.JSONField(verbose_name='SQL升级信息', blank=False, null=True)
+    nacos_info = models.JSONField(verbose_name='Nacos升级信息', blank=False, null=True)
+    config_info = models.JSONField(verbose_name='配置升级信息', blank=False, null=True)
+    code_info = models.JSONField(verbose_name='代码升级信息', blank=False, null=True)
     # 初始化升级标志，0为首次升级，非0则为迭代升级
     init_flag = models.JSONField(verbose_name='初始化升级标志', blank=False, null=False, default=init_data)
 

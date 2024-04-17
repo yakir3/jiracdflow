@@ -72,103 +72,105 @@ class JiraFlowView(APIView):
             'data': {}
         }
         try:
-            d_logger.info(request.data)
-            return Response(data=return_data, status=status.HTTP_200_OK)
-
             # 初始化并序列化 webhook http request data 数据
             jira_event_webhook_obj = JiraEventWebhookAPI(request.data)
-            webhook_env = jira_event_webhook_obj.webhook_env
+            webhook_environment = jira_event_webhook_obj.webhook_environment
             webhook_event = jira_event_webhook_obj.webhook_event
-            
+
             # 暂时不处理运营环境 webhook
-            if webhook_env == 'PROD':
+            d_logger.info(webhook_environment)
+            if webhook_environment == 'PROD':
                 raise Exception('运营环境跳过，不处理 webhook!!!!!!!!')
 
-            # webhook 事件为 created 时，调用 created_event_operate 方法初始化工单与开始流程
+            # WebHook 事件为 created 时，写入工单数据到数据库，开始完整升级流程
             if webhook_event == 'jira:issue_created':
-                # jiraissue_ser = JiraIssueSerializer(data=jira_event_webhook_obj.webhook_data)
-                # jiraissue_ser.is_valid(raise_exception=True)
-                # webhook_result = jira_event_webhook_obj.created_event_operate(
-                #     current_issue_data=dict(jiraissue_ser.validated_data),
-                #     serializer=jiraissue_ser
-                # )
-                d_logger.info('工单被创建.....')
+                # 根据 JiraIssue 序列化器序列化当前 Jira Webhook 数据
+                jira_issue_ser = JiraIssueSerializer(data=jira_event_webhook_obj.webhook_data)
+                jira_issue_ser.is_valid(raise_exception=True)
+                jira_issue_ser_data = dict(jira_issue_ser.validated_data)
+                # Jira 工单数据存入数据库
+                jira_issue_ser.save()
+                d_logger.info('新建 Jira 工单成功，写入工单数据到数据库中。')
+                webhook_result = jira_event_webhook_obj.created_event_action(
+                    current_issue_data=jira_issue_ser_data,
+                )
 
-            # webhook 事件为 updated 时，判断当前 issue 状态，根据状态进行转换
+            # WebHook 事件为 updated 时，根据当前 issue 状态执行对应函数逻辑
             elif webhook_event == 'jira:issue_updated':
-                # 获取当前 Jira webhook 表单中数据
-                current_webhook_data = jira_event_webhook_obj.webhook_data
-                current_issue_key = current_webhook_data.get('issue_key')
-                current_status = current_webhook_data.get('status')
-                current_summary = current_webhook_data.get('summary')
-                # 获取 JiraIssue 表中的数据
-                last_issue_obj = JiraIssue.objects.get(issue_key=current_issue_key)
-                # 根据 JiraIssue 序列化器序列化当前 webhook 数据
-                jiraissue_ser = JiraIssueSerializer(instance=last_issue_obj, data=current_webhook_data)
-                jiraissue_ser.is_valid(raise_exception=True)
-                # 根据升级工单名获取 SqlWorkflow 表数据
-                # sql_workflow_obj = SqlWorkflow.objects.filter(workflow_name=current_summary)
+                # 获取当前 Jira webhook 表单中数据: webhook_data, issue_key, issue_status, summary
+                webhook_data = jira_event_webhook_obj.webhook_data
+                issue_key = webhook_data.get('issue_key')
+                issue_status = webhook_data.get('issue_status')
+                summary = webhook_data.get('summary')
 
-                # 判断当前 webhook 状态，根据状态获取数据进行变更。每次转换状态前更新当前 issue DB 数据
-                jiraissue_ser_data = dict(jiraissue_ser.validated_data)
-                match current_status:
-                    # SQL PENDING 状态，可转变状态：无SQL升级/已升级 ｜ 提交SQL
+                # 获取之前 JiraIssue 表中的工单数据，获取前先确保数据库中存在 issue 数据
+                assert JiraIssue.objects.filter(issue_key=issue_key), "当前 Jira Issue 不存在数据库中，中止继续执行"
+                last_issue_obj = JiraIssue.objects.get(issue_key=issue_key)
+
+                # 根据 JiraIssue 序列化器序列化当前 Jira Webhook 数据
+                jira_issue_ser = JiraIssueSerializer(instance=last_issue_obj, data=webhook_data)
+                jira_issue_ser.is_valid(raise_exception=True)
+                jira_issue_ser_data = dict(jira_issue_ser.validated_data)
+
+                # 判断当前 issue 状态，根据状态获取数据进行变更。每次转换状态前更新当前 issue DB 数据
+                match issue_status:
+                    # SQL PENDING 状态
                     case 'SQL PENDING':
                         webhook_result = jira_event_webhook_obj.updated_event_sql_pending(
                             last_issue_obj=last_issue_obj,
-                            current_issue_data=jiraissue_ser_data,
+                            current_issue_data=jira_issue_ser_data,
                             sqlworkflow_ser=SqlWorkflowSerializer,
                             sql_workflow_ins=SqlWorkflow
                         )
-                    # SQL执行中状态
+                    # SQL PROCESSING 状态
                     case 'SQL PROCESSING':
                         webhook_result = jira_event_webhook_obj.updated_event_sql_processing(
                             last_issue_obj=last_issue_obj,
                             sql_workflow_ins=SqlWorkflow,
-                            current_issue_data=jiraissue_ser_data
+                            current_issue_data=jira_issue_ser_data
                         )
-                    # 配置文件处理中状态
+                    # CONFIG PROCESSING 状态
                     case 'CONFIG PROCESSING':
                         webhook_result = jira_event_webhook_obj.updated_event_config_processing(
                             last_issue_obj=last_issue_obj,
-                            current_issue_data=jiraissue_ser_data
+                            current_issue_data=jira_issue_ser_data
                         )
-                    # 升级代码中状态
+                    # CODE PROCESSING 状态
                     case 'CODE PROCESSING':
                         webhook_result = jira_event_webhook_obj.updated_event_code_processing(
                             last_issue_obj=last_issue_obj,
-                            current_issue_data=jiraissue_ser_data
+                            current_issue_data=jira_issue_ser_data
                         )
-                    # 升级过程异常，待人工修复状态
+                    # FIX PENDING 状态，此状态为等待人工修复不做状态转换
                     case 'FIX PENDING':
                         webhook_result = jira_event_webhook_obj.updated_event_fix_pending(
-                            current_issue_key=current_issue_key
+                            summary=summary
                         )
                     case _:
-                        msg = f"工单：{current_summary} 当前 issue 状态为 <{current_status}>，不需要触发下一步流程，不更新 issue 数据，忽略状态转换"
+                        msg = f"工单：{summary} 当前 issue 状态为 <{issue_status}>，不需要触发下一步流程，不更新 issue 数据，忽略状态转换"
                         webhook_result = {'status': True, 'msg': msg}
             else:
                 raise KeyError('jira webhook event 事件不为 created 或 updated，请检查 webhook event 类型')
-            return_data['data'] = webhook_result
 
             # webhook 处理结果非 true 时，返回错误信息
             if not webhook_result['status']:
-                return_data['msg'] = 'WebHook 触发执行相应状态返回错误结果.'
-                d_logger.error(webhook_result)
+                return_data['msg'] = f'WebHook 触发成功，执行触发状态逻辑返回错误.'
+                return_data['data'] = webhook_result
+                d_logger.error(return_data)
                 return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             # webhook 正常触发，记录返回日志
             return_data['status'] = True
-            return_data['msg'] = 'WebHook 触发成功，执行相应状态返回正确结果.'
+            return_data['msg'] = 'WebHook 触发成功.'
             return_data['data'] = webhook_result
             d_logger.info(return_data)
             return Response(data=return_data, status=status.HTTP_200_OK)
         except KeyError as err:
-            return_data['msg'] = f'WebHook 数据中没有 created 或 updated 操作,异常原因：{err.__str__()}'
+            return_data['msg'] = f'WebHook 触发失败，issue 事件不是 created 或 updated 操作，异常原因：{err.__str__()}'
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        except Exception as err:
+        except Exception:
             tb_str = traceback.format_exc()
-            # return_data['msg'] = f'webhook 触发失败，异常原因：{err.__str__()}'
-            return_data['msg'] = f'webhook 触发失败，异常原因：{tb_str}'
+            return_data['msg'] = f'WebHook 触发失败，异常原因：{tb_str}'
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -9,9 +9,9 @@ class JiraIssueSerializer(serializers.ModelSerializer):
         model = JiraIssue
         fields = '__all__'
         read_only_fields = ['create_date', 'init_flag']
-        extra_kwargs = {
-            'project': {'allow_blank': True}
-        }
+        # extra_kwargs = {
+        #     'project': {'allow_blank': True}
+        # }
 
 
 class SqlWorkflowSerializer(serializers.ModelSerializer):

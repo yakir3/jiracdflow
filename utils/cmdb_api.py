@@ -6,8 +6,6 @@ from typing import Dict, List, Union, Any, Tuple
 
 __all__ = ['CmdbAPI']
 
-
-
 class CmdbAPI:
     def __init__(
             self,

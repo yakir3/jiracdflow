@@ -185,21 +185,21 @@ class ArcheryAPI(object):
             resource_tag: str = None,
             instance_tag: str = None,
             db_name: str = None,
-            is_backup: bool = False,
-            engineer: str = 'admin'
+            is_backup: bool = True,
+            engineer: str = 'cdflow'
     ) -> Dict[str, Union[str, Dict, bool]]:
         """
         Args:
-            sql_index:
-            sql_release_info:
-            sql_content:
-            workflow_name:
-            demand_url:
-            resource_tag:
-            instance_tag:
-            db_name:
-            is_backup:
-            engineer:
+            sql_index: SQL 执行序号
+            sql_release_info: SQL 版本信息
+            sql_content: SQL 文件内容
+            workflow_name: 工单名称
+            demand_url: 问题描述链接
+            resource_tag: 资源组 ID
+            instance_tag: 实例 ID
+            db_name: 数据库名称
+            is_backup: 是否备份
+            engineer: 发起人
         Returns:
             Dict: return_data
         """
@@ -237,15 +237,15 @@ class ArcheryAPI(object):
             data = {
                 'sql_content': sql_content,  # sql content
                 'workflow': {
-                    'sql_index': sql_index,  # 工单SQL执行序号
-                    'sql_release_info': sql_release_info,  # 工单SQL版本信息
-                    'workflow_name': workflow_name,  # 工单名
-                    'demand_url': demand_url,  # 问题描述
-                    'group_id': group_id,  # 资源组id
-                    'instance': instance_id,  # 实例ID
-                    'db_name': db_name,  # 数据库名
-                    'is_backup': is_backup,  # 是否备份
-                    'engineer': engineer,  # 发起人
+                    'sql_index': sql_index,
+                    'sql_release_info': sql_release_info,
+                    'workflow_name': workflow_name,
+                    'demand_url': demand_url,
+                    'group_id': group_id,
+                    'instance': instance_id,
+                    'db_name': db_name,
+                    'is_backup': is_backup,
+                    'engineer': engineer,
                     'run_date_start': str(current_time),
                     'run_date_end': str(future_time)
                 },
