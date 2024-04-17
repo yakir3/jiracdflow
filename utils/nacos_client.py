@@ -24,7 +24,10 @@ class NacosClient:
         response = requests.post(url=url, data=post_data)
         data = response.json()
         token = data.get("accessToken", "None")
-        return token
+        if token:
+            return token
+        else:
+            raise "登录失败"
 
     def get_config(self, namespace=None, group=None, data_id=None):
         url = f"{self.server_address}/v2/cs/config"
@@ -35,7 +38,11 @@ class NacosClient:
             "accessToken": self.token
         }
         response = requests.get(url, params=post_data)
-        return response.json()
+        data = response.json()
+        if data["code"] == 0 and data["message"] == "success":
+            return data["data"]
+        else:
+            raise data["message"]
 
     def post_config(self, namespace=None, group=None, data_id=None, content=None):
         """
@@ -50,7 +57,11 @@ class NacosClient:
             "content": content
         }
         response = requests.post(url, data=post_data)
-        return response.json()
+        data = response.json()
+        if data["code"] == 0 and data["message"] == "success":
+            return data["message"]
+        else:
+            raise data["message"]
 
     @staticmethod
     def convert_text_to_dict(data_text):
@@ -70,12 +81,12 @@ class NacosClient:
         no_data_line = ''
         for line in lines:
             if line.strip():
-                if line.startswith('#'):
+                if line.strip().startswith('#'):
                     no_data_line += line.strip()
                     no_data_line += "\n"
                 else:
                     # 仅拆分一次，避免值中含有 '=' 字符
-                    key, value = line.split('=', 1)
+                    key, value = line.strip().split('=', 1)
                     data_dict[key.strip()] = {"value": value.strip(), "no_data_line": no_data_line}
                     no_data_line = ''
             else:
@@ -151,15 +162,13 @@ if __name__ == "__main__":
             {"action": "update", "key": "key1", "value": "11"},
             {"action": "update", "key": "key2", "value": "22"},
             {"action": "update", "key": "key3", "value": "33"},
-            {"action": "add", "key": "key4", "value": "44"},
+            {"action": "delete", "key": "key4", "value": "44"},
         ],
     }
-    # 创建客户端
     nacos_client = NacosClient(server_address=server_address, username=username, password=password)
     for data_id, keys in nacos_keys.items():
         # 从nacos获取配置
-        config_data = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
-        confit_text = config_data["data"]
+        confit_text = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
         # 把从nacos获取到的配置 由文本 转换为 dict类型
         config_dict = nacos_client.convert_text_to_dict(confit_text)
         # 检查要操作的key与对的action是否合规(有该key才可以删除和修改，无该key才可以新增)
@@ -173,6 +182,7 @@ if __name__ == "__main__":
         # 修改配置并写入nocos
         new_config = nacos_client.update_config(config_dict, keys)
         content = nacos_client.convert_dict_to_text(new_config)
-        data = nacos_client.post_config(namespace=namespace, group=group, data_id=data_id, content=content)
-        message = data["message"]
-        print(f"配置文件修改: {message}")
+        try:
+            nacos_client.post_config(namespace=namespace, group=group, data_id=data_id, content=content)
+        except Exception as error:
+            print(f"修改nacos失败， error{error}")
