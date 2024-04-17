@@ -1,15 +1,10 @@
 import requests
 from collections import OrderedDict
 import copy
-from utils.getconfig import GetYamlConfig
-
-
-# 获取 JIRA 配置信息
-nacos_config = GetYamlConfig().get_config('NACOS')
 
 
 class NacosClient:
-    def __init__(self):
+    def __init__(self, nacos_config):
         self.server_address = nacos_config.get("server_address")
         self.username = nacos_config.get("username")
         self.password = nacos_config.get("password")

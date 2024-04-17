@@ -1,5 +1,10 @@
 from git_utils import get_sql_content
+from utils.getconfig import GetYamlConfig
 
+
+git_config = GetYamlConfig().get_config('GIT')
+server_address = git_config["server_address"]
+private_token = git_config["private_token"]
 
 # sql处理
 def do_other_things(sql):
@@ -25,6 +30,8 @@ def example():
     for sql_item in sql_list:
         try:
             content = get_sql_content(
+                server_address=server_address,
+                private_token=private_token,
                 repo_name=sql_item["repo_name"],
                 file_name=sql_item["file_name"],
                 commit_sha=sql_item["commit_sha"]

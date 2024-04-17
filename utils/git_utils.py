@@ -1,12 +1,5 @@
 import requests
 from urllib.parse import quote
-from utils.getconfig import GetYamlConfig
-
-
-# 获取 JIRA 配置信息
-git_config = GetYamlConfig().get_config('GIT')
-server_address = git_config.get("server_address")
-private_token = git_config.get("private_token")
 
 
 # git仓库的项目名与项目ID的映射关系
@@ -21,7 +14,7 @@ git_project_name_id_map = {
 }
 
 
-def get_sql_content(repo_name=None, file_name=None, commit_sha=None):
+def get_sql_content(server_address=None, private_token=None, repo_name=None, file_name=None, commit_sha=None):
     """
     repo_name: git仓库的项目名
     file_name: 文件名 若是多级目录 则以项目为根目录的相对路径，如  folder1/folder2/a.txt

@@ -1,6 +1,10 @@
 from nacos_client import NacosClient
 import traceback
 import re
+from utils.getconfig import GetYamlConfig
+
+
+nacos_config = GetYamlConfig().get_config('NACOS')['ISAGENT']
 
 
 # 通过文本方式修改的配置
@@ -54,7 +58,7 @@ def example():
     #     ],
     # }
     # 创建客户端
-    nacos_client = NacosClient()
+    nacos_client = NacosClient(nacos_config)
 
     for data_id, keys in nacos_keys.items():
         # 从nacos获取配置
@@ -103,7 +107,7 @@ def test_read_all_config():
         "machine-manage",
         "manage-db-config"
     ]
-    nacos_client = NacosClient()
+    nacos_client = NacosClient(nacos_config)
     for data_id in data_ids:
         try:
             confit_text = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
