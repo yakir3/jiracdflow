@@ -4,18 +4,15 @@ import copy
 from utils.getconfig import GetYamlConfig
 
 
-__all__ = ['NacosClient']
-
-
 # 获取 JIRA 配置信息
 nacos_config = GetYamlConfig().get_config('NACOS')
 
 
 class NacosClient:
-    def __init__(self, server_address=None, username=None, password=None):
-        self.server_address = server_address
-        self.username = username
-        self.password = password
+    def __init__(self):
+        self.server_address = nacos_config.get("server_address")
+        self.username = nacos_config.get("username")
+        self.password = nacos_config.get("password")
         self.token = self.__login__()
 
     def __login__(self):
@@ -27,7 +24,7 @@ class NacosClient:
         if token:
             return token
         else:
-            raise "登录失败"
+            raise Exception("登录nacos失败")
 
     def get_config(self, namespace=None, group=None, data_id=None):
         url = f"{self.server_address}/v2/cs/config"
@@ -42,7 +39,7 @@ class NacosClient:
         if data["code"] == 0 and data["message"] == "success":
             return data["data"]
         else:
-            raise data["message"]
+            raise Exception(f"从nacos获取配置失败: {data['message']}")
 
     def post_config(self, namespace=None, group=None, data_id=None, content=None):
         """
@@ -61,7 +58,7 @@ class NacosClient:
         if data["code"] == 0 and data["message"] == "success":
             return data["message"]
         else:
-            raise data["message"]
+            raise Exception(f"更新配置到nacos失败: {data['message']}")
 
     @staticmethod
     def convert_text_to_dict(data_text):
@@ -145,44 +142,3 @@ class NacosClient:
             if i["action"] == "update":
                 new_data_dict[key_name]["value"] = i["value"]
         return new_data_dict
-
-
-if __name__ == "__main__":
-    # 通用配置
-    server_address = "https://slnacos.opsre.net"
-    username = "map"
-    password = 'acclub.io666'
-    namespace = "29d881a1-70bd-4fb2-90b9-03ae5989e1d4"
-    group = "DEFAULT_GROUP"
-    # 以data_id 为操作批次
-    data_id = "map-test.propertles"
-    # 将nacos配置按照dataId分组
-    nacos_keys = {
-        "map-test.propertles": [
-            {"action": "update", "key": "key1", "value": "11"},
-            {"action": "update", "key": "key2", "value": "22"},
-            {"action": "update", "key": "key3", "value": "33"},
-            {"action": "delete", "key": "key4", "value": "44"},
-        ],
-    }
-    nacos_client = NacosClient(server_address=server_address, username=username, password=password)
-    for data_id, keys in nacos_keys.items():
-        # 从nacos获取配置
-        confit_text = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
-        # 把从nacos获取到的配置 由文本 转换为 dict类型
-        config_dict = nacos_client.convert_text_to_dict(confit_text)
-        # 检查要操作的key与对的action是否合规(有该key才可以删除和修改，无该key才可以新增)
-        check_keys_message = nacos_client.check_all_keys(config_dict, keys)
-        if check_keys_message:
-            for key, message in check_keys_message.items():
-                print(data_id, key, message)
-            raise "配置文件keys校验未通过"
-        else:
-            print("配置文件keys校验通过")
-        # 修改配置并写入nocos
-        new_config = nacos_client.update_config(config_dict, keys)
-        content = nacos_client.convert_dict_to_text(new_config)
-        try:
-            nacos_client.post_config(namespace=namespace, group=group, data_id=data_id, content=content)
-        except Exception as error:
-            print(f"修改nacos失败， error{error}")

@@ -59,8 +59,12 @@ CMDB:
   token: xxx
 
 NACOS:
-  server_address: https://slnacos.opsre.net
-  username: map
-  password: acclub.io666
-  namespace: 29d881a1-70bd-4fb2-90b9-03ae5989e1d4
-  group: DEFAULT_GROUP
+  server_address: https://xxx.com
+  username: xx
+  password: xxx
+  namespace: xxx
+  group: xx
+
+GIT:
+  server_address: https://xx.com
+  private_token: xxx
