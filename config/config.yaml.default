@@ -47,4 +47,3 @@ Tool:
     host: 1.1.1.1
     port: 5432
     dbname: { user: dbtest, password: dbtest, database: dbtest }
-
