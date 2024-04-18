@@ -5,7 +5,7 @@ from django.utils import timezone
 def init_data():
     return {
         'sql_init_flag': 0,
-        'apollo_init_flag': 0,
+        'nacos_init_flag': 0,
         'config_init_flag': 0,
         'code_init_flag': 0
     }

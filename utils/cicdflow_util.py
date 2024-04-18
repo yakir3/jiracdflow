@@ -217,15 +217,16 @@ def code_info_to_dict(
         env: str = 'UAT'
 ) -> Dict:
     code_info_list = []
-    # 处理 code_info 数据，转为列表数据
-    tmp_dict = dict()
-    for i in code_info_str.split('\r\n'):
-        pro_info = i.split('@@')
-        tmp_dict['project_name'] = pro_info[0]
-        tmp_dict['code_version'] = pro_info[1]
-        tmp_dict['tag'] = pro_info[2]
-        tmp_dict['env'] = env
-        code_info_list.append(tmp_dict)
+    if code_info_str:
+        # 处理 code_info 数据，转为列表数据
+        tmp_dict = dict()
+        for i in code_info_str.split('\r\n'):
+            pro_info = i.split('@@')
+            tmp_dict['project_name'] = pro_info[0]
+            tmp_dict['code_version'] = pro_info[1]
+            tmp_dict['tag'] = pro_info[2]
+            tmp_dict['env'] = env
+            code_info_list.append(tmp_dict)
     return code_info_list
 
 def thread_upgrade(
@@ -633,46 +634,37 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
     def updated_event_config_processing(self, last_issue_obj: Any, current_issue_data: Dict):
         """
-        <CONFIG PROCESSING> 状态，判断流程为首次升级或迭代升级
+        <CONFIG PROCESSING> 状态，处理配置文件变更动作
         """
-        # webhook 触发先更新 SqlWorkflow 表数据，进入<CONFIG PROCESSING>状态
+        # 更新 JiraIssue 表数据
         last_issue_obj.status = 'CONFIG PROCESSING'
         last_issue_obj.save()
 
         try:
+            # 获取工单数据信息
+            last_nacos_info = last_issue_obj.nacos_info
             current_issue_key = current_issue_data['issue_key']
-            current_apollo_info = current_issue_data['apollo_info']
-            current_config_info = current_issue_data['config_info']
+            current_nacos_info = current_issue_data['nacos_info']
             current_summary = current_issue_data['summary']
+            current_environment = current_issue_data['environment']
 
-            apollo_exists = bool(current_apollo_info)
-            config_exists = bool(current_config_info)
-            apollo_has_deploy = [item for item in current_apollo_info if item['has_deploy_uat'] is not True]
-            config_has_deploy = [item for item in current_config_info if item['has_deploy_uat'] is not True]
-            # 保存 apollo_info 与 config_info 数据到 SqlWorkflow 表
-            last_issue_obj.apollo_info = current_apollo_info
-            last_issue_obj.config_info = current_config_info
-            # webhook 中 apollo_info 与 config_info 数据都为空，直接触发到下一流程
-            if not apollo_exists and not config_exists:
-                last_issue_obj.init_flag['apollo_init_flag'] += 1
-                last_issue_obj.init_flag['config_init_flag'] += 1
-                last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, 'NoConfigUpgrade/AlreadyUpgrade')
-                self.webhook_return_data[
-                    'msg'] = f"Apollo与配置文件为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <NoConfigUpgrade/AlreadyUpgrade> 到状态 <CODE PROCESSING>"
-                return self.webhook_return_data
-            # apollo_info 或 config_info 数据只要不为空，判断 has_deploy_uat 字段是否存在 False
-            elif not apollo_has_deploy and not config_has_deploy:
-                last_issue_obj.init_flag['apollo_init_flag'] += 1
-                last_issue_obj.init_flag['config_init_flag'] += 1
-                last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, 'NoConfigUpgrade/AlreadyUpgrade')
-                self.webhook_return_data[
-                    'msg'] = f"Apollo与配置文件已升级 UAT 环境，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <NoConfigUpgrade/AlreadyUpgrade> 到状态 <CODE PROCESSING>"
-                return self.webhook_return_data
+            # # 转为可自动执行数据格式
+            # last_code_info_list = code_info_to_dict(last_code_info, current_environment)
+            # current_code_info_list = code_info_to_dict(current_code_info, current_environment)
 
-            # 卡住流程，等待人工处理
-            self.webhook_return_data['msg'] = f"升级工单 {current_summary} 存在 Apollo/配置文件 升级，不触发状态转换，人工介入处理"
+            last_issue_obj.init_flag['nacos_init_flag'] += 1
+            last_issue_obj.init_flag['config_init_flag'] += 1
+            last_issue_obj.save()
+            # nacos_info 数据为空，直接触发到下一流程
+            if not bool(current_nacos_info):
+                jira_obj.change_transition(current_issue_key, 'NoConfigUpgrade')
+                self.webhook_return_data['msg'] = f"无配置升级，升级工单 {current_summary} 触发转换 <NoConfigUpgrade> 到状态 <CODE PROCESSING>"
+            # nacos_info 或 config_info 数据不为空，执行配置自动变更
+            else:
+
+                last_issue_obj.save()
+                jira_obj.change_transition(current_issue_key, 'ConfigUpgradeSuccessful')
+                self.webhook_return_data['msg'] = f"升级工单 {current_summary} 触发转换 <ConfigUpgradeSuccessful> 到状态 <CODE PROCESSING>"
             return self.webhook_return_data
         except Exception as err:
             self.webhook_return_data['status'] = False
@@ -685,27 +677,29 @@ class JiraEventWebhookAPI(JiraWebhookData):
             last_issue_obj: Any,
             current_issue_data: Dict
     ) -> Dict[str, Union[dict, bool, str]]:
+        """
+        <CODE PROCESSING> 状态，处理代码升级动作
+        """
         # 更新 JiraIssue 表数据
         last_issue_obj.status = 'CODE PROCESSING'
         last_issue_obj.save()
 
-        # 获取工单数据信息
-        last_code_info = last_issue_obj.code_info
-        code_init_flag = last_issue_obj.init_flag['code_init_flag']
-        current_issue_key = current_issue_data['issue_key']
-        current_code_info = current_issue_data['code_info']
-        current_summary = current_issue_data['summary']
-        current_environment = current_issue_data['environment']
-
-        # 转为列表数据
-        last_code_info_list = code_info_to_dict(last_code_info)
-        current_code_info_list = code_info_to_dict(current_code_info)
-
         try:
-            # webhook 中 code_info 数据为空，直接触发到下一流程
-            code_exists = bool(current_code_info)
-            if not code_exists:
-                last_issue_obj.status = 'UAT UPGRADED'
+            # 获取工单数据信息
+            last_code_info = last_issue_obj.code_info
+            code_init_flag = last_issue_obj.init_flag['code_init_flag']
+            current_issue_key = current_issue_data['issue_key']
+            current_code_info = current_issue_data['code_info']
+            current_summary = current_issue_data['summary']
+            current_environment = current_issue_data['environment']
+
+            # 转为列表数据
+            last_code_info_list = code_info_to_dict(last_code_info, current_environment)
+            current_code_info_list = code_info_to_dict(current_code_info, current_environment)
+
+            # code_info 数据为空，直接触发到下一流程
+            if not bool(current_code_info_list):
+                last_issue_obj.status = 'UPGRADED DONE'
                 last_issue_obj.init_flag['code_init_flag'] += 1
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.save()
@@ -716,13 +710,13 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # 初始化迭代升级代码数据，判断是否为首次升级
             # 非首次升级代码
             if code_init_flag:
-                # 已成功升级的 code_info 数据
-                upgrade_success_list = last_code_info_list
                 # 待升级的 code_info 数据
                 wait_upgrade_list = compare_list_info(last_code_info_list, current_code_info_list)
+                # 已成功升级的 code_info 数据
+                upgrade_success_list = last_code_info_list
                 # 迭代升级，对比 last_code_info_list 和 current_code_info_list 差异，无差异则触发跳过流程
                 if not wait_upgrade_list:
-                    last_issue_obj.status = 'UAT UPGRADED'
+                    last_issue_obj.status = 'UPGRADED DONE'
                     last_issue_obj.init_flag['code_init_flag'] += 1
                     last_issue_obj.save()
                     jira_obj.change_transition(current_issue_key, 'NoCodeUpgrade')
