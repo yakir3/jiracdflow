@@ -3,6 +3,7 @@ Archery:
   password: xxx
 
 CMDB:
+  host: https://cmdb.com
   token: xxx
 
 Gitlab:
