@@ -7,8 +7,8 @@ from drf_yasg.utils import swagger_auto_schema
 from typing import Any
 import traceback
 
-from cicdflow.models import JiraIssue, SqlWorkflow
-from cicdflow.serializers import JiraIssueSerializer, SqlWorkflowSerializer
+from cicdflow.models import JiraIssue
+from cicdflow.serializers import JiraIssueSerializer
 from utils.jira_webhook_api import JiraEventWebhookAPI
 import logging
 # c_logger = logging.getLogger("console_logger")
@@ -117,15 +117,15 @@ class JiraFlowView(APIView):
                         webhook_result = jira_event_webhook_obj.updated_event_sql_pending(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jira_issue_ser_data,
-                            sqlworkflow_ser=SqlWorkflowSerializer,
-                            sql_workflow_ins=SqlWorkflow
+                            # sqlworkflow_ser=SqlWorkflowSerializer,
+                            # sql_workflow_ins=SqlWorkflow
                         )
                     # SQL PROCESSING 状态
                     case "SQL PROCESSING":
                         webhook_result = jira_event_webhook_obj.updated_event_sql_processing(
                             last_issue_obj=last_issue_obj,
-                            sql_workflow_ins=SqlWorkflow,
                             current_issue_data=jira_issue_ser_data
+                            # sql_workflow_ins=SqlWorkflow,
                         )
                     # CONFIG PROCESSING 状态
                     case "CONFIG PROCESSING":

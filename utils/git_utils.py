@@ -4,15 +4,14 @@ from urllib.parse import quote
 
 # git仓库的项目名与项目ID的映射关系
 git_project_name_id_map = {
-    "is03-cashsite": 320,
-    "bw01-cashsite": 321,
-    "ipachinko-merchant": 225,
-    "isagent-report": 318,
-    "isagent-merchant": 317,
-    "isagent-admin": 316,
-    "sql_islot_islot-uat_iltm01": 154,
+    "isagent_isagent-admin": 316,
+    "isagent_isagent-merchant": 317,
+    "isagent_isagent-report": 318,
+    "isagent_ipachinko-merchant": 319,
+    "isagent_bw01-cashsite": 321,
+    "islot_islot-main": 328,
+    "islot_islot-v2": 329
 }
-
 
 def get_sql_content(server_address=None, private_token=None, repo_name=None, file_name=None, commit_sha=None):
     """

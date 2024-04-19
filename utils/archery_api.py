@@ -9,21 +9,21 @@ __all__ = ['ArcheryAPI']
 class ArcheryAPI(object):
     def __init__(
             self,
-            username: str = None,
-            password: str = None,
-            main_url: str = "https://uat-archery.opsre.net/api",
+            host: str = "",
+            username: str = "",
+            password: str = "",
             executable_time_range: int = 3
     ):
         self._username = username
         self._password = password
-        self.token_url = main_url + "/auth/token/"
-        self.refresh_url = main_url + "/auth/token/refresh/"
-        self.verify_url = main_url + "/auth/token/verify/"
-        self.resource_group_url = main_url + "/v1/user/resourcegroup/"
-        self.instance_url = main_url + "/v1/instance/"
-        self.workflow_url = main_url + "/v1/workflow/"
-        self.audit_workflow_url = main_url + "/v1/workflow/audit/"
-        self.execute_workflow_url = main_url + "/v1/workflow/execute/"
+        self.token_url = host + "/auth/token/"
+        self.refresh_url = host + "/auth/token/refresh/"
+        self.verify_url = host + "/auth/token/verify/"
+        self.resource_group_url = host + "/v1/user/resourcegroup/"
+        self.instance_url = host + "/v1/instance/"
+        self.workflow_url = host + "/v1/workflow/"
+        self.audit_workflow_url = host + "/v1/workflow/audit/"
+        self.execute_workflow_url = host + "/v1/workflow/execute/"
         self.executable_time_range = executable_time_range
         self._api_headers = {
             "content-type": "application/json",
@@ -266,10 +266,10 @@ class ArcheryAPI(object):
                 if res_data['workflow']['status'] == 'workflow_manreviewing':
                     result_data = {
                         'w_id': int(res_data['workflow']['id']),
-                        'workflow_name': res_data['workflow']['workflow_name'],
-                        'w_status': res_data['workflow']['status'],
                         'sql_index': int(res_data['workflow']['sql_index']),
-                        'sql_release_info': int(res_data['workflow']['sql_release_info'])
+                        'sql_release_info': int(res_data['workflow']['sql_release_info']),
+                        'workflow_name': res_data['workflow']['workflow_name'],
+                        'w_status': res_data['workflow']['status']
                     }
                     result = {'status': True, 'msg': '提交工单成功,等待审核', 'data': result_data}
                 else:

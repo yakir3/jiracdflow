@@ -1,4 +1,6 @@
 Archery:
+  uat_host: https://uat.com
+  prod_host: https://prod.com
   username: cdflow
   password: xxx
 
@@ -17,14 +19,20 @@ JIRA:
   password: cdflow
 
 Nacos:
-  ISLOT:
-    domain: https://nacos.com
+  Product1:
+    host: https://nacos.com
     username: API
     password: API
-  ISAGENT:
-    domain: https://nacos.com
+    uat_namespace: xxx
+    prod_namespace: xxx
+    group: DEFAULT_GROUP
+  Product2:
+    host: https://nacos.net
     username: API
     password: API
+    uat_namespace: xxx
+    prod_namespace: xxx
+    group: DEFAULT_GROUP
 
 Tool:
   SVN:

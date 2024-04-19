@@ -9,36 +9,18 @@ __all__ = ["CmdbAPI"]
 class CmdbAPI:
     def __init__(
             self,
-            main_url: str = "https://cmdb.opsre.net",
-            token: str = None
+            host: str = "",
+            token: str = ""
     ):
-        self.search_url = main_url + "/api/upgrade_release_vmc"
-        self.upgrade_url = main_url + "/api/upgrade/upgrade/"
-        self.upgrade_v2_url = main_url + "/api/upgrade/upgrade/v2/"
-
-    @staticmethod
-    def _login_required(func):
-        def wrapper(self, *args, **kwargs):
-            try:
-                # 获取 CMDB 配置信息
-                cmdb_config = GetYamlConfig().get_config("CMDB")
-                token = cmdb_config.get("token")
-                self._api_headers = {
-                    "content-type": "application/json",
-                    "access-token": token,
-                }
-                result = func(self, *args, **kwargs)
-                return result
-            except Exception as err:
-                return_data = {
-                    "status": False,
-                    "msg": f"CMDB 鉴权失败，异常原因：{err.__str__()}"
-                }
-                return return_data
-        return wrapper
+        self.search_url = host + "/api/upgrade_release_vmc"
+        self.upgrade_url = host + "/api/upgrade/upgrade/"
+        self.upgrade_v2_url = host + "/api/upgrade/upgrade/v2/"
+        self._api_headers = {
+            "content-type": "application/json",
+            "access-token": token,
+        }
 
     # 通过 project_name 查询 id，返回工程 id 用于升级
-    @_login_required
     def search_by_project_name(
             self,
             project_name: str = None,
@@ -79,7 +61,6 @@ class CmdbAPI:
             return_data["msg"] = f"查询<升级发布>工程 ID 异常，异常原因：{err}"
         return return_data
 
-    @_login_required
     def project_deploy(
             self,
             project_name: str = None,

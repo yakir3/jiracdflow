@@ -1,7 +1,6 @@
 from typing import Dict, List, Union, Any, Tuple
 from datetime import datetime
 import traceback
-from django.db.models import Q
 
 from utils.jira_api import JiraWebhookData, JiraAPI
 from utils.cicdflow_utils import *
@@ -60,9 +59,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
     def updated_event_sql_pending(
             self,
             last_issue_obj: Any,
-            current_issue_data: Dict,
-            sqlworkflow_ser: Any,
-            sql_workflow_ins: Any
+            current_issue_data: Dict
     ) -> Dict:
         # 更新 JiraIssue 表数据
         last_issue_obj.init_flag["sql_init_flag"] += 1
@@ -84,24 +81,25 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
             # sql_info 数据不为空，调用 sql_submit_handle 函数提交 SQL
             sql_submit_res = sql_submit_handle(
+                workflow_name=current_summary,
                 sql_info=current_sql_info,
                 environment=current_environment
-            )  # TODO
+            )
 
-            # sql 提交成功，执行流程转换状态到下一步
+            # sql 提交成功，流程转换状态到下一步
             if sql_submit_res["status"]:
                 jira_obj.change_transition(current_issue_key, "SubmitSqlSuccessful")
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <SubmitSqlSuccessful> 到状态 <SQL PROCESSING>"
-            # sql 提交失败，流程跳转 FIX PENDING
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 提交成功，转换到状态 <SQL PROCESSING>"
+            # sql 提交失败，流程转换状态 FIX PENDING
             else:
                 jira_obj.change_transition(current_issue_key, "SubmitSqlFailed")
                 self.webhook_return_data["status"] = False
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <SubmitSqlFailed> 到状态 <FIX PENDING>"
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 提交失败，转换到状态 <FIX PENDING>"
+                self.webhook_return_data["data"] = sql_submit_res
         except Exception as err:
             self.webhook_return_data["status"] = False
-            self.webhook_return_data["msg"] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{traceback.format_exc()}"
+            self.webhook_return_data["msg"] = f"升级工单 {current_summary} <SQL PENDING> webhook 触发失败，异常原因：{traceback.format_exc()}"
             jira_obj.change_transition(current_issue_key, "SubmitSqlFailed")
-        self.webhook_return_data['data'] = current_issue_data
         return self.webhook_return_data
 
     def updated_event_sql_processing(
@@ -128,18 +126,18 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 environment=current_environment
             ) # TODO
 
-            # sql 升级成功，执行流程转换状态到下一步
+            # sql 升级成功，流程转换到下一步
             if sql_upgrade_res["status"]:
                 jira_obj.change_transition(current_issue_key, "SqlUpgradeSuccessful")
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <SqlUpgradeSuccessful> 到状态 <CONFIG PROCESSING>"
-            # sql 升级失败，流程跳转 FIX PENDING
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级成功，转换到状态 <CONFIG PROCESSING>"
+            # sql 升级失败，流程转换 FIX PENDING
             else:
                 jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
                 self.webhook_return_data["status"] = False
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <SqlUpgradeFailed> 到状态 <FIX PENDING>"
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级失败，转换到状态 <FIX PENDING>"
         except Exception as err:
             self.webhook_return_data["status"] = False
-            self.webhook_return_data["msg"] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{traceback.format_exc()}"
+            self.webhook_return_data["msg"] = f"升级工单 {current_summary} <SQL PROCESSING> webhook 触发失败，异常原因：{traceback.format_exc()}"
             jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
         self.webhook_return_data['data'] = current_issue_data
         return self.webhook_return_data
@@ -170,7 +168,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # nacos_info 数据为空，直接触发到下一流程
             if not bool(current_nacos_info):
                 jira_obj.change_transition(current_issue_key, "NoConfigUpgrade")
-                self.webhook_return_data["msg"] = f"无配置升级，升级工单 {current_summary} 触发转换 <NoConfigUpgrade> 到状态 <CODE PROCESSING>"
+                self.webhook_return_data["msg"] = f"无配置升级，升级工单 {current_summary} 转换到状态 <CODE PROCESSING>"
 
             # nacos_info 数据不为空，调用 nacos_handle 函数执行配置自动变更
             nacos_res = nacos_handle(
@@ -182,7 +180,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # nacos 变更执行成功，执行流程转换状态到下一步
             if nacos_res["status"]:
                 jira_obj.change_transition(current_issue_key, "ConfigUpgradeSuccessful")
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行成功"
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行成功，转换到状态 <CODE PROCESSING>"
             # 变更执行失败，流程跳转 FIX PENDING
             else:
                 jira_obj.change_transition(current_issue_key, "ConfigUpgradeFailed")
@@ -190,7 +188,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行失败，返回：{nacos_res}"
         except Exception as err:
             self.webhook_return_data["status"] = False
-            self.webhook_return_data["msg"] = f"<CONFIG PROCESSING> 状态 webhook 触发失败，异常原因：{traceback.format_exc()}"
+            self.webhook_return_data["msg"] = f"升级工单 {current_summary} <CONFIG PROCESSING> webhook 触发失败，异常原因：{traceback.format_exc()}"
             jira_obj.change_transition(current_issue_key, "ConfigUpgradeFailed")
         self.webhook_return_data['data'] = current_issue_data
         return self.webhook_return_data
@@ -221,7 +219,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.save()
                 jira_obj.change_transition(current_issue_key, "NoCodeUpgrade")
-                self.webhook_return_data["msg"] = f"无代码需要升级，升级工单 {current_summary} 触发转换 <NoCodeUpgrade> 到状态 <UPGRADED DONE>"
+                self.webhook_return_data["msg"] = f"无代码需要升级，升级工单 {current_summary} 转换到状态 <UPGRADED DONE>"
                 return self.webhook_return_data
 
             # TODO: 多次迭代升级代码时，只升级差异部分
@@ -250,18 +248,18 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 last_issue_obj.status = "UPGRADED DONE"
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.save()
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级成功"
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级成功，转换到状态 <UPGRADE DONE>"
                 self.webhook_return_data['data'] = {"已升级信息列表": upgrade_info_list}
                 jira_obj.change_transition(current_issue_key, "CodeUpgradeSuccessful")
                 # 发送升级成功邮件通知
                 d_logger.info(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
             else:
                 self.webhook_return_data["status"] = False
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级失败，检查日志"
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级失败，检查 CMDB 返回内容"
                 jira_obj.change_transition(current_issue_key, "CodeUpgradeFailed")
         except Exception as err:
             self.webhook_return_data["status"] = False
-            self.webhook_return_data["msg"] = f"<CODE PROCESSING> 状态 webhook 触发失败，异常原因：{traceback.format_exc()}"
+            self.webhook_return_data["msg"] = f"升级工单 {current_summary} <CODE PROCESSING> webhook 触发失败，异常原因：{traceback.format_exc()}"
             jira_obj.change_transition(current_issue_key, "CodeUpgradeFailed")
         self.webhook_return_data['data'] = current_issue_data
         return self.webhook_return_data
