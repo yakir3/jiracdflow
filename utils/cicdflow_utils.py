@@ -2,8 +2,10 @@ from typing import Dict, List, Union, Any, Tuple
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict, UserDict
 from time import sleep
+import traceback
 import re
 
+from utils.archery_api import ArcheryAPI
 from utils.cmdb_api import CmdbAPI
 from utils.getconfig import GetYamlConfig
 from utils.nacos_client import NacosClient
@@ -16,8 +18,9 @@ d_logger = logging.getLogger("default_logger")
 
 __all__ = [
     # sql
-    "get_sql_commit_data",
-    "get_backup_commit_data",
+    "format_sql_info",
+    "sql_submit_handle",
+    "sql_upgrade_handle",
     # nacos
     "format_nacos_info",
     "nacos_handle",
@@ -25,8 +28,266 @@ __all__ = [
     "format_code_info",
     "compare_list_info",
     "completed_workflow_notice",
-    "thread_code_upgrade"
+    "thread_code_handle"
 ]
+
+# 转化升级代码数据
+def format_sql_info(
+        sql_info: str = None,
+) -> List:
+    sql_info_list = []
+    if sql_info:
+        # 处理 sql_info 数据，转为列表数据
+        tmp_dict = dict()
+        for i in sql_info.split("\r\n"):
+            tmp_info = i.split("@@")
+            tmp_dict["project_name"] = tmp_info[0]
+            tmp_dict["code_version"] = tmp_info[1]
+            tmp_dict["tag"] = tmp_info[2]
+            sql_info_list.append(tmp_dict)
+    return sql_info_list
+
+# 提交 SQL 到 Archery 处理函数
+def sql_submit_handle(
+        sql_info: str = None,
+        environment: str = "UAT"
+):
+    # # 过滤掉只在运营执行的 SQL
+    # current_sql_info = [item for item in current_sql_info if "仅运营" not in item["svn_file"]]
+    # current_sql_info = [item for item in current_sql_info if "ONLYPROD" not in item["svn_file"]]
+    # current_summary = current_issue_data["summary"]
+    # 创建 Archery 对象，调用 commit_workflow 方法提交 SQL
+    archery_obj = ArcheryAPI()
+
+    # filter 工单是否数据库中存在， 存在判断状态， 不存在则提交
+    # 轮循当前 sql_info 数据，根据 has_deploy_uat 值判断是否需要提交 SQL
+    for sql_data in current_sql_info:
+        svn_version = sql_data["svn_version"]
+        svn_file = sql_data["svn_file"]
+        sql_id = sql_data.get('sql_id')
+
+        # 获取提交 Archery SQL 工单数据
+        commit_data, bk_commit_data = get_sql_commit_data(sql_data, current_sql_info, current_summary)
+
+        # 判断本次 SQL 升级是否需要提交备份工单，备份工单提交失败打印消息，不退出
+        if bk_commit_data:
+            bk_sql_workflow_obj = sql_workflow_ins.objects.filter(
+                workflow_name=current_summary,
+                sql_id=sql_id,
+            ).filter(
+                Q(w_status="workflow_manreviewing") | Q(w_status="workflow_review_pass") | Q(w_status="workflow_finish"))
+            if not bk_sql_workflow_obj:
+                try:
+                    upgrade_bk_result = archery_obj.commit_workflow(**bk_commit_data)
+                    bk_name = bk_commit_data.get("workflow_name")
+                    assert upgrade_bk_result["status"], f"备份工单 {bk_name} 提交失败"
+                    upgrade_bk_result['data']['sql_id'] = sql_id
+                    sql_ser = sqlworkflow_ser(data=upgrade_bk_result['data'])
+                    sql_ser.is_valid(raise_exception=True)
+                    sql_ser.save()
+                    d_logger.info(f"备份工单{bk_name}提交成功。")
+                except Exception as err:
+                    d_logger.info(f"备份工单提交/保存记录异常，异常原因：{err.__str__()}")
+
+        # 判断本次 SQL 升级是否需要提交升级工单
+        if commit_data:
+            # 先查询 SqlWorkflow 表是否已存在 SQL，如已存在则已提交过，不重复提交。
+            sql_workflow_obj = sql_workflow_ins.objects.filter(
+                workflow_name=current_summary,
+                sql_id=sql_id,
+                # sql_index=commit_data["sql_index"]
+            ).filter(
+                Q(w_status="workflow_manreviewing") | Q(w_status="workflow_review_pass") | Q(w_status="workflow_finish"))
+            if not sql_workflow_obj:
+                # 调用 archery_api commit 方法提交 SQL
+                commit_result = archery_obj.commit_workflow(**commit_data)
+                # 成功提交 SQL 则存入 SqlWorkflow 表
+                if commit_result["status"]:
+                    # 提交成功时，获取 SqlWorkflow 序列化器序列化提交 SQL 工单数据，保存入 sql_workflow 表，用于后续审核和执行同步工单状态
+                    commit_result['data']['sql_id'] = sql_id
+                    sql_ser = sqlworkflow_ser(data=commit_result['data'])
+                    sql_ser.is_valid(raise_exception=True)
+                    sql_ser.save()
+                    d_logger.info(f"SQL：{svn_file} 提交成功，提交版本：{svn_version}，对应工单：{current_issue_key}")
+                else:
+                    d_logger.error(
+                        f"SQL：{svn_file} 提交失败，提交版本：{svn_version}，对应工单：{current_issue_key}，错误原因：{commit_result['data']}")
+
+    # 只有全部 SQL 提交成功才转换为 <SQL PROCESSING>，只要有 SQL 提交失败不转换状态
+    commit_success_list = []
+    for sql_item in commit_sql_list:
+        sql_workflow_obj = sql_workflow_ins.objects.filter(
+            workflow_name=current_summary,
+            sql_id=sql_item['sql_id']
+        ).filter(Q(w_status="workflow_manreviewing") | Q(w_status="workflow_review_pass") | Q(
+            w_status="workflow_finish"))
+        if sql_workflow_obj:
+            commit_success_list.append(1)
+
+    last_issue_obj.sql_info = current_sql_info
+    last_issue_obj.init_flag["sql_init_flag"] += 1
+    if len(commit_sql_list) == len(commit_success_list):
+        self.webhook_return_data["msg"] = f"所有待执行 SQL 提交成功，升级工单 {current_summary} 触发转换 <SubmitSQL> 到状态 <SQL PROCESSING>"
+        jira_obj.change_transition(current_issue_key, "SubmitSQL")
+    else:
+        self.webhook_return_data["status"] = False
+        self.webhook_return_data["msg"] = f"存在待执行 SQL 工单提交失败，升级工单 {current_summary} 保持 <SQL PENDING> 状态等待修复"
+
+
+# 调用 Archery 接口自动执行工单函数
+def sql_upgrade_handle(
+        sql_info: str = None,
+        environment: str = "UAT"
+):
+    # 初始化 Archery 实例，用于操作工单
+    archery_obj = ArcheryAPI()
+
+    # 判断是否存在需要备份工单，先执行备份工单再执行后续 SQL
+    # 获取 SqlWorkflow 表中所有待审核状态的备份工单
+    bk_sql_workflow_obj = sql_workflow_ins.objects.filter(
+        workflow_name=f"{current_summary}_备份工单",
+        w_status="workflow_manreviewing"
+    )
+    if bk_sql_workflow_obj:
+        bk_sql_list = [row for row in bk_sql_workflow_obj.values("w_id")]
+        for bk_sql_item in bk_sql_list:
+            bk_sql_wid = bk_sql_item["w_id"]
+            try:
+                # 审核备份工单
+                audit_result = archery_obj.audit_workflow(workflow_id=bk_sql_wid)
+                assert audit_result["status"], "工单 {} 审核失败，错误原因 {}".format(bk_sql_wid, audit_result)
+                # 执行备份工单
+                execute_result = archery_obj.execute_workflow(workflow_id=bk_sql_wid)
+                assert execute_result["status"], "工单 {} 执行失败，错误原因 {}".format(bk_sql_wid, execute_result)
+                # 审核+执行成功，修改工单状态，保存到 SqlWorkflow 表
+                bk_sql_workflow_ins = bk_sql_workflow_obj.get(w_id=bk_sql_wid)
+                bk_sql_workflow_ins.w_status = "workflow_finish"
+                bk_sql_workflow_ins.save()
+            except AssertionError as err:
+                d_logger.error(f"备份工单审核或执行异常，异常原因：{err.__str__()}")
+    else:
+        d_logger.info(f"本次 SQL 升级备份工单为空，无需备份.")
+
+    try:
+        # 获取并判断 SQL 工单状态
+        # workflow_manreviewing：将所有 SQL 工单都转换为 <workflow_review_pass> 状态，一旦存在审核失败，将 Jira 状态触发 <SQL执行失败> 转换到 <SQL PENDING>
+        # workflow_review_pass：按顺序执行 SQL 工单，一旦失败终止当前及后续 SQL 工单，将 Jira 状态转换为 <SQL PENDING>
+        # workflow_queuing / workflow_exception：终止流程
+        # workflow_finish：所有工单执行完成，将 Jira 状态触发 <SQL执行成功> 转换到 <CONFIG PROCESSING>
+
+        # 开始升级 SQL
+        start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        d_logger.info(f"工单 {current_summary} 开始执行 SQL，开始时间：{start_time}")
+
+        # 获取 SqlWorkflow 表中所有待审核状态的 SQL 工单，已 sql_index 为排序顺序
+        audit_sql_obj = sql_workflow_ins.objects.filter(
+            workflow_name=current_summary,
+            w_status="workflow_manreviewing"
+        ).order_by("sql_index")
+        # 开始自动审核
+        audit_sql_list = [row for row in audit_sql_obj.values(
+            "w_id",
+            "workflow_name",
+            "w_status",
+            "sql_index",
+            'sql_release_info',
+            'sql_id')]
+        for audit_sql_data in audit_sql_list:
+            # SQL 工单 ID，通过唯一 ID 查询结果
+            w_id = audit_sql_data["w_id"]
+            select_result = archery_obj.get_workflows(w_id=w_id)
+            sql_workflow_status = select_result['data'][0]["status"]
+            audit_ins = audit_sql_obj.get(**audit_sql_data)
+            # 工单为待审核状态时，调用 archery_api 方法审核通过工单
+            if sql_workflow_status == "workflow_manreviewing":
+                audit_result = archery_obj.audit_workflow(workflow_id=w_id)
+                # 工单自动审核失败，不继续审核。将 Jira 工单转换为 <SQL PENDING> 状态
+                if not audit_result["status"]:
+                    self.webhook_return_data["status"] = False
+                    self.webhook_return_data[
+                        "msg"] = f"工单 {current_summary} 有 SQL 自动审核失败，失败原因：{audit_result['data']}"
+                    jira_obj.change_transition(current_issue_key, "SQLUpgradeFailed")
+                    break
+                audit_ins.w_status = "workflow_review_pass"
+            else:
+                audit_ins.w_status = sql_workflow_status
+            # 保存状态到 sql_workflow 表
+            audit_ins.save()
+        # 自动审核结束，确认是否还存在 workflow_manreviewing 状态工单
+        if audit_sql_obj:
+            self.webhook_return_data["status"] = False
+            self.webhook_return_data[
+                "msg"] = f"工单 {current_summary} 自动审核正常结束，但存在有非 <审核通过> 状态的工单"
+            jira_obj.change_transition(current_issue_key, "SQLUpgradeFailed")
+            return self.webhook_return_data
+
+        # 获取 SqlWorkflow 表中所有审核通过状态的 SQL 工单
+        sql_id_list = [item['sql_id'] for item in current_sql_info if not item["has_deploy_uat"]]
+        execute_sql_obj = sql_workflow_ins.objects.filter(
+            workflow_name=current_summary,
+            w_status="workflow_review_pass",
+            sql_id__in=sql_id_list
+        ).order_by("sql_index")
+        # 开始自动执行，根据 current_sql_info 中 sql_id 获取需要审核执行的 sql
+        execute_sql_list = [row for row in execute_sql_obj.values(
+            "w_id",
+            "workflow_name",
+            "w_status",
+            "sql_index",
+            'sql_release_info',
+            'sql_id')]
+        # 只有 sql_id 存在且 has_deploy_uat 为 False 的工单才执行
+        for execute_sql_data in execute_sql_list:
+            # SQL 工单 ID，通过唯一 ID 查询结果
+            w_id = execute_sql_data["w_id"]
+            # select_result = archery_obj.get_workflows(w_id=w_id)
+            # sql_workflow_status = select_result['data'][0]["status"]
+            execute_ins = execute_sql_obj.get(**execute_sql_data)
+
+            # 工单为审核通过时，调用 archery_api 方法执行工单
+            execute_result = archery_obj.execute_workflow(workflow_id=w_id)
+            # 工单自动执行失败，终止执行。将 Jira 工单转换为 <SQL PENDING> 状态
+            if not execute_result["status"]:
+                self.webhook_return_data["status"] = False
+                self.webhook_return_data[
+                    "msg"] = f"工单 {current_summary}  SQL 调用 archery 执行 SQL 接口失败，失败原因：{execute_result['data']}"
+                jira_obj.change_transition(current_issue_key, "SQLUpgradeFailed")
+                break
+            # 成功触发执行后等待15s，否则工单可能为 workflow_queuing | workflow_executing 状态。等待后再次查询状态，不成功终止后续 SQL 自动执行
+            # sleep(15)
+            select_execute_result = archery_obj.get_workflows(w_id=w_id)
+            execute_status = select_execute_result['data'][0]["status"]
+            execute_ins.w_status = execute_status
+            execute_ins.save()
+            d_logger.info(
+                f"{current_summary} SQL 执行成功, SQL 版本: {execute_sql_data['sql_release_info']}, SQL ID: {execute_sql_data['sql_id']}")
+            if not execute_status == "workflow_finish":
+                self.webhook_return_data["status"] = False
+                self.webhook_return_data[
+                    "msg"] = f"工单 {current_summary}  存在执行结果为异常的 SQL，失败原因：{execute_result['data']}"
+                jira_obj.change_transition(current_issue_key, "SQLUpgradeFailed")
+                break
+        # 自动执行结束，核实是否还存在 workflow_review_pass 状态工单
+        if execute_sql_obj:
+            self.webhook_return_data["status"] = False
+            self.webhook_return_data[
+                "msg"] = f"工单 {current_summary} 自动执行正常结束，但存在有非 <已正常结束> 状态的工单"
+            return self.webhook_return_data
+
+        # SQl 升级结束，无代码升级则直接发出邮件
+        end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        d_logger.info(f"工单 {current_summary} 执行 SQL 结束，结束时间：{end_time}")
+        if not current_code_info or not compare_list_info(last_sql_info, current_code_info):
+            upgrade_info_list = []
+            d_logger.info(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
+
+        # SQL 升级成功，转换 Jira 工单状态
+        self.webhook_return_data[
+            "msg"] = f"升级工单 {current_summary} 所有 SQL 执行成功，触发转换 <SQLUpgradeSuccessful> 到状态 <CONFIG PROCESSING>"
+        jira_obj.change_transition(current_issue_key, "SQLUpgradeSuccessful")
+    except AssertionError as err:
+        self.webhook_return_data["status"] = False
+        self.webhook_return_data["msg"] = err.__str__()
 
 # 传入 Jira 表单中 sql 升级数据，返回 commit_data 和 bk_commit_data 数据，用于提交 Archery
 def get_sql_commit_data(
@@ -205,12 +466,13 @@ def format_nacos_info(
             item = {
                 "action": columns[1],
                 "key": columns[2],
-                "value": columns[3],
+                "value": columns[3] if columns[1] != "delete" else None,
             }
             if data_id in data:
                 data[data_id].append(item)
             else:
                 data[data_id] = []
+                data[data_id].append(item)
     return data
 
 
@@ -226,7 +488,7 @@ def nacos_handle(
     }
     try:
         # 根据 product_id 获取对应产品配置
-        nacos_config = GetYamlConfig().get_config("NACOS").get(product_id)
+        nacos_config = GetYamlConfig().get_config("Nacos").get(product_id)
         assert nacos_config, f"获取 {product_id} 产品的 nacos 配置信息失败，检查 config.yaml 配置文件。"
 
         # 根据 environment 获取对应 namespace
@@ -256,30 +518,35 @@ def nacos_handle(
                 #     d_logger.info(data_id, key, message)
                 raise KeyError("Nacos 配置文件 keys 校验不通过，不进行变更动作，检查配置信息。")
             else:
-                d_logger.info("Nacos 变更配置文件 keys 校验通过")
+                pass
+        d_logger.info("Nacos 配置文件 keys 全部校验通过")
 
-        # 校验通过，开始实际变更操作
-        for data_id, keys in nacos_keys.items():
-            # 从nacos获取配置
-            confit_text = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
-            # 把从nacos获取到的配置 由文本 转换为 dict类型
-            config_dict = nacos_client.convert_text_to_dict(confit_text)
-            d_logger.info(f"记录变更前 nacos 配置信息, data_id：{data_id}, 配置内容：{config_dict}")
-            new_config = nacos_client.update_config(config_dict, keys)
-            content = nacos_client.convert_dict_to_text(new_config)
-            message = nacos_client.post_config(namespace=namespace, group=group, data_id=data_id, content=content)
-            d_logger.info(f"变更 nacos 配置返回信息：{message}")
+        # # 校验通过，开始实际变更操作
+        # for data_id, keys in nacos_keys.items():
+        #     # 从nacos获取配置
+        #     confit_text = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
+        #     # 把从nacos获取到的配置 由文本 转换为 dict类型
+        #     config_dict = nacos_client.convert_text_to_dict(confit_text)
+        #     d_logger.info(f"记录变更前 nacos 配置信息, data_id：{data_id}, 配置内容：{config_dict}")
+        #     new_config = nacos_client.update_config(config_dict, keys)
+        #     content = nacos_client.convert_dict_to_text(new_config)
+        #     message = nacos_client.post_config(namespace=namespace, group=group, data_id=data_id, content=content)
+        #     d_logger.info(f"变更 nacos 配置返回信息：{message}")
+
+        # Nacos 变更全部执行成功，返回 True
+        return_data["status"] = True
+        return_data["msg"] = "Nacos 变更配置成功。"
     except KeyError as err:
-        return_data["msg"] = err.__str__()
+        return_data["msg"] = traceback.format_exc()
     except Exception as err:
-        return_data["msg"] = f"处理 Nacos 变更动作异常，异常原因：{err.__str__()}"
+        return_data["msg"] = f"Nacos 变更配置执行异常，异常原因：{traceback.format_exc()}"
     return return_data
 
 
 # 转化升级代码数据
 def format_code_info(
         code_info: str = None,
-        env: str = "UAT"
+        environment: str = "UAT"
 ) -> List:
     code_info_list = []
     if code_info:
@@ -290,7 +557,7 @@ def format_code_info(
             tmp_dict["project_name"] = tmp_info[0]
             tmp_dict["code_version"] = tmp_info[1]
             tmp_dict["tag"] = tmp_info[2]
-            tmp_dict["env"] = env
+            tmp_dict["environment"] = environment
             code_info_list.append(tmp_dict)
     return code_info_list
 
@@ -331,7 +598,7 @@ def completed_workflow_notice(
     return send_result
 
 # 多线程方式升级代码
-def thread_code_upgrade(
+def thread_code_handle(
         wait_upgrade_list: List,
         upgrade_success_list: List,
         upgrade_info_list: List

@@ -7,7 +7,7 @@ __all__ = ["JiraWebhookData", "JiraAPI"]
 
 class JiraWebhookData(object):
     """
-    初始化 Jira WebHook 请求数据，格式化为 JiraIssueSerializer 序列化器格式
+    初始化 Jira webhook 请求数据，格式化为 JiraIssueSerializer 序列化器格式
     customfield_10700: 产品 ID
     customfield_11100: 功能列表
     customfield_11104: 升级类型
@@ -81,11 +81,11 @@ class JiraWebhookData(object):
             "data": dict()
         }
         try:
-            # 解析 Jira Webhook 数据
+            # 解析 Jira webhook 数据
             self._convert_issue_data()
             # 返回自定义解析数据
             return_data["status"] = True
-            return_data["msg"] = "Jira Webhook 解析成自定义数据成功。"
+            return_data["msg"] = "Jira webhook 解析成自定义数据成功。"
             return_data["data"] = {
                 "fromstring": self.fromstring,
                 "tostring": self.tostring,

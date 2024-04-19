@@ -43,7 +43,7 @@ class CmdbAPI:
             self,
             project_name: str = None,
             tag: str = None,
-            env: str = "UAT"
+            environment: str = "UAT"
     ) -> Dict[str, Union[bool, str, int]]:
         return_data = {
             "status": False,
@@ -55,10 +55,10 @@ class CmdbAPI:
             upper_project_name = project_name.upper().replace("-", "_")
 
             # 根据 env 调整 project_name 字段真实名称, UAT 或 PROD
-            if env == "PROD":
+            if environment == "PROD":
                 real_project_name = upper_project_name
             else:
-                real_project_name = f"{env.upper()}_{upper_project_name}"
+                real_project_name = f"{environment.upper()}_{upper_project_name}"
 
             # 请求 CMDB 接口，获取 ID
             data = {
@@ -85,14 +85,14 @@ class CmdbAPI:
             project_name: str = None,
             tag: str = "v1",
             code_version: str = None,
-            env: str = "UAT",
+            environment: str = "UAT",
     ) -> Dict[str, Union[bool, str, List, Dict]]:
         """
         Args:
             project_name: my-app
             tag: v1 | v2 | v3 ..
             code_version: a1b2c3
-            env: UAT | PROD
+            environment: UAT | PROD
         Returns:
             {
                 "status": True,
@@ -113,18 +113,18 @@ class CmdbAPI:
                 "project_name": project_name,
                 "code_version": code_version,
                 "tag": tag,
-                "env": env
+                "environment": environment
             },
             "notice_flags": None
         }
 
         try:
             # 通过 project_name 获取<升级发布>工程 ID
-            project_info = self.search_by_project_name(project_name=project_name, tag=tag, env=env)
+            project_info = self.search_by_project_name(project_name=project_name, tag=tag, environment=environment)
             assert project_info["status"], f"工程 {project_name} 获取 CMDB <升级发布> ID 失败，失败原因：{project_info['msg']}"
 
             # 根据 env 判断升级环境
-            if env == "PROD":
+            if environment == "PROD":
                 real_branch = "master"
             else:
                 real_branch = f"release_uat_{tag[-1]}"

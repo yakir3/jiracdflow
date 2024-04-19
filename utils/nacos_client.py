@@ -14,12 +14,11 @@ class NacosClient:
         url = f'{self.server_address}/v1/auth/login'
         post_data = {"username": self.username, "password": self.password}
         response = requests.post(url=url, data=post_data)
+        assert response.status_code == 200, "登录 Nacos 失败"
         data = response.json()
-        token = data.get("accessToken", "None")
-        if token:
-            return token
-        else:
-            raise Exception("登录nacos失败")
+        token = data.get("accessToken")
+        assert token, "登录 Nacos 失败"
+        return token
 
     def get_config(self, namespace=None, group=None, data_id=None):
         url = f"{self.server_address}/v2/cs/config"
@@ -31,10 +30,8 @@ class NacosClient:
         }
         response = requests.get(url, params=post_data)
         data = response.json()
-        if data["code"] == 0 and data["message"] == "success":
-            return data["data"]
-        else:
-            raise Exception(f"从nacos获取配置失败: {data['message']}")
+        assert data["code"] == 0 and data["message"] == "success", f"从nacos获取配置失败: {data}"
+        return data["data"]
 
     def post_config(self, namespace=None, group=None, data_id=None, content=None):
         """

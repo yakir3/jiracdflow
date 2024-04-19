@@ -4,7 +4,6 @@ import traceback
 from django.db.models import Q
 
 from utils.jira_api import JiraWebhookData, JiraAPI
-from utils.archery_api import ArcheryAPI
 from utils.cicdflow_utils import *
 import logging
 d_logger = logging.getLogger("default_logger")
@@ -25,7 +24,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
         self.webhook_from = self.webhook_data.pop("fromstring")
         self.webhook_to = self.webhook_data.pop("tostring")
         self.webhook_event = self.webhook_data.pop("webhook_event")
-        # 获取 env 字段
+        # 获取 environment 字段
         self.webhook_environment = self.webhook_data.get("environment")
         # cdflow 执行每个流程返回数据格式
         self.webhook_return_data = {
@@ -58,299 +57,91 @@ class JiraEventWebhookAPI(JiraWebhookData):
         self.webhook_return_data['data'] = current_issue_data
         return self.webhook_return_data
 
-    def updated_event_sql_pending(self, last_issue_obj: Any, current_issue_data: Dict, sqlworkflow_ser: Any, sql_workflow_ins: Any):
-        """
-        <待执行SQL> 状态，判断升级为首次升级或迭代升级
-        """
-        # webhook 触发先更新 SqlWorkflow 表数据，进入<SQL PENDING>状态
+    def updated_event_sql_pending(
+            self,
+            last_issue_obj: Any,
+            current_issue_data: Dict,
+            sqlworkflow_ser: Any,
+            sql_workflow_ins: Any
+    ) -> Dict:
+        # 更新 JiraIssue 表数据
+        last_issue_obj.init_flag["sql_init_flag"] += 1
         last_issue_obj.status = "SQL PENDING"
         last_issue_obj.save()
 
-        try:
-            # last_sql_info = last_issue_obj.sql_info
-            current_issue_key = current_issue_data["issue_key"]
-            current_sql_info = current_issue_data["sql_info"]
-            # 过滤掉只在运营执行的 SQL
-            current_sql_info = [item for item in current_sql_info if "仅运营" not in item["svn_file"]]
-            current_sql_info = [item for item in current_sql_info if "ONLYPROD" not in item["svn_file"]]
-            current_summary = current_issue_data["summary"]
-            # current_project = current_issue_data["project"]
-
-            # 实例化 archery 对象，调用 commit_workflow 方法提交sql审核执行
-            archery_obj = ArcheryAPI()
-
-            # 从<SQL PROCESSING>状态转换来的 webhook 只更新数据不做操作
-            if self.webhook_from == "SQL PROCESSING":
-                last_issue_obj.status = "SQL PROCESSING FAILED"
-                # last_issue_obj.init_flag["sql_init_flag"] += 1
-                last_issue_obj.save()
-                self.webhook_return_data["msg"] = f"从<SQL PROCESSING>状态转换而来，不触发 webhook 操作，保持<SQL PENDING>状态等待重新触发"
-                return self.webhook_return_data
-
-            # webhook 中 sql_info 数据为空，直接触发到下一流程
-            sql_exists = bool(current_sql_info)
-            if not sql_exists:
-                last_issue_obj.status = "CONFIG PROCESSING"
-                last_issue_obj.init_flag["sql_init_flag"] += 1
-                last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, "NoSqlUpgrade/AlreadyUpgrade")
-                self.webhook_return_data[
-                    "msg"] = f"SQL 升级数据为空，自动触发进入下一流程。升级工单 {current_summary} 触发转换 <NoSqlUpgrade/AlreadyUpgrade> 到状态 <CONFIG PROCESSING>"
-                return self.webhook_return_data
-
-            # Jira 的 sql_info 数据中对比当前所有需要提交 SQL 工单是否已全部存入 SqlWorkflow 表中
-            commit_sql_list = [item for item in current_sql_info if not item["has_deploy_uat"]]
-            # webhook 中 sql_info 数据所有 has_deploy_uat 字段值都为 True, 直接触发到下一流程
-            if not commit_sql_list:
-                last_issue_obj.status = "CONFIG PROCESSING"
-                last_issue_obj.init_flag["sql_init_flag"] += 1
-                last_issue_obj.save()
-                jira_obj.change_transition(current_issue_key, "NoSqlUpgrade/AlreadyUpgrade")
-                self.webhook_return_data[
-                    "msg"] = f"SQL 升级已在 UAT 环境执行，无需重复执行。升级工单 {current_summary} 触发转换 <NoSqlUpgrade/AlreadyUpgrade> 到状态 <CONFIG PROCESSING>"
-                return self.webhook_return_data
-
-            # 轮循当前 sql_info 数据，根据 has_deploy_uat 值判断是否需要提交 SQL
-            for sql_data in current_sql_info:
-                svn_version = sql_data["svn_version"]
-                svn_file = sql_data["svn_file"]
-                sql_id = sql_data.get('sql_id')
-
-                # 获取提交 Archery SQL 工单数据
-                commit_data, bk_commit_data = get_sql_commit_data(sql_data, current_sql_info, current_summary)
-
-                # 判断本次 SQL 升级是否需要提交备份工单，备份工单提交失败打印消息，不退出
-                if bk_commit_data:
-                    bk_sql_workflow_obj = sql_workflow_ins.objects.filter(
-                        workflow_name=current_summary,
-                        sql_id=sql_id,
-                    ).filter(Q(w_status="workflow_manreviewing")| Q(w_status="workflow_review_pass") | Q(w_status="workflow_finish"))
-                    if not bk_sql_workflow_obj:
-                        try:
-                            upgrade_bk_result = archery_obj.commit_workflow(**bk_commit_data)
-                            bk_name = bk_commit_data.get("workflow_name")
-                            assert upgrade_bk_result["status"], f"备份工单 {bk_name} 提交失败"
-                            upgrade_bk_result['data']['sql_id'] = sql_id
-                            sql_ser = sqlworkflow_ser(data=upgrade_bk_result['data'])
-                            sql_ser.is_valid(raise_exception=True)
-                            sql_ser.save()
-                            d_logger.info(f"备份工单{bk_name}提交成功。")
-                        except Exception as err:
-                            d_logger.info(f"备份工单提交/保存记录异常，异常原因：{err.__str__()}")
-
-                # 判断本次 SQL 升级是否需要提交升级工单
-                if commit_data:
-                    # 先查询 SqlWorkflow 表是否已存在 SQL，如已存在则已提交过，不重复提交。
-                    sql_workflow_obj = sql_workflow_ins.objects.filter(
-                        workflow_name=current_summary,
-                        sql_id=sql_id,
-                        # sql_index=commit_data["sql_index"]
-                    ).filter(Q(w_status="workflow_manreviewing")| Q(w_status="workflow_review_pass") | Q(w_status="workflow_finish"))
-                    if not sql_workflow_obj:
-                        # 调用 archery_api commit 方法提交 SQL
-                        commit_result = archery_obj.commit_workflow(**commit_data)
-                        # 成功提交 SQL 则存入 SqlWorkflow 表
-                        if commit_result["status"]:
-                            # 提交成功时，获取 SqlWorkflow 序列化器序列化提交 SQL 工单数据，保存入 sql_workflow 表，用于后续审核和执行同步工单状态
-                            commit_result['data']['sql_id'] = sql_id
-                            sql_ser = sqlworkflow_ser(data=commit_result['data'])
-                            sql_ser.is_valid(raise_exception=True)
-                            sql_ser.save()
-                            d_logger.info(f"SQL：{svn_file} 提交成功，提交版本：{svn_version}，对应工单：{current_issue_key}")
-                        else:
-                            d_logger.error(f"SQL：{svn_file} 提交失败，提交版本：{svn_version}，对应工单：{current_issue_key}，错误原因：{commit_result['data']}")
-
-            # 只有全部 SQL 提交成功才转换为 <SQL PROCESSING>，只要有 SQL 提交失败不转换状态
-            commit_success_list = []
-            for sql_item in commit_sql_list:
-                sql_workflow_obj = sql_workflow_ins.objects.filter(
-                    workflow_name=current_summary,
-                    sql_id=sql_item['sql_id']
-                ).filter(Q(w_status="workflow_manreviewing") | Q(w_status="workflow_review_pass") | Q(
-                    w_status="workflow_finish"))
-                if sql_workflow_obj:
-                    commit_success_list.append(1)
-
-            last_issue_obj.sql_info = current_sql_info
-            last_issue_obj.init_flag["sql_init_flag"] += 1
-            if len(commit_sql_list) == len(commit_success_list):
-                self.webhook_return_data["msg"] = f"所有待执行 SQL 提交成功，升级工单 {current_summary} 触发转换 <SubmitSQL> 到状态 <SQL PROCESSING>"
-                jira_obj.change_transition(current_issue_key, "SubmitSQL")
-            else:
-                self.webhook_return_data["status"] = False
-                self.webhook_return_data["msg"] = f"存在待执行 SQL 工单提交失败，升级工单 {current_summary} 保持 <SQL PENDING> 状态等待修复"
-        except Exception as err:
-            tb_str = traceback.format_exc()
-            self.webhook_return_data["status"] = False
-            # self.webhook_return_data["msg"] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{err}"
-            self.webhook_return_data["msg"] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{tb_str}"
-        return self.webhook_return_data
-
-    def updated_event_sql_processing(self, last_issue_obj: Any, sql_workflow_ins: Any, current_issue_data: Dict):
-        """
-        <SQL PROCESSING> 状态，按升级序号顺序 审核+执行 SQL 工单，出现异常则中断执行
-        """
-        # webhook 触发先更新 SqlWorkflow 表数据，进入<SQL PROCESSING>状态
-        last_issue_obj.status = "SQL PROCESSING"
-        last_issue_obj.save()
-
-        last_sql_info = last_issue_obj.sql_info
+        # 获取工单数据信息
         current_issue_key = current_issue_data["issue_key"]
         current_sql_info = current_issue_data["sql_info"]
         current_summary = current_issue_data["summary"]
-        current_code_info = current_issue_data["code_info"]
-
-        # 初始化 Archery 实例，用于操作工单
-        archery_obj = ArcheryAPI()
-
-        # 获取 SqlWorkflow 表中所有待审核状态的备份工单
-        bk_sql_workflow_obj = sql_workflow_ins.objects.filter(
-            workflow_name=f"{current_summary}_备份工单",
-            w_status="workflow_manreviewing"
-        )
-        # 判断是否存在需要备份工单，先执行备份工单再执行后续 SQL
-        if bk_sql_workflow_obj:
-            bk_sql_list = [row for row in bk_sql_workflow_obj.values("w_id")]
-            for bk_sql_item in bk_sql_list:
-                bk_sql_wid = bk_sql_item["w_id"]
-                try:
-                    # 审核备份工单
-                    audit_result = archery_obj.audit_workflow(workflow_id=bk_sql_wid)
-                    assert audit_result["status"], "工单 {} 审核失败，错误原因 {}".format(bk_sql_wid, audit_result)
-                    # 执行备份工单
-                    execute_result = archery_obj.execute_workflow(workflow_id=bk_sql_wid)
-                    assert execute_result["status"], "工单 {} 执行失败，错误原因 {}".format(bk_sql_wid, execute_result)
-                    # 审核+执行成功，修改工单状态，保存到 SqlWorkflow 表
-                    bk_sql_workflow_ins = bk_sql_workflow_obj.get(w_id=bk_sql_wid)
-                    bk_sql_workflow_ins.w_status = "workflow_finish"
-                    bk_sql_workflow_ins.save()
-                except AssertionError as err:
-                    d_logger.error(f"备份工单审核或执行异常，异常原因：{err.__str__()}")
-        else:
-            d_logger.info(f"本次 SQL 升级备份工单为空，无需备份.")
+        current_environment = current_issue_data["environment"]
 
         try:
-            # 获取并判断 SQL 工单状态
-            # workflow_manreviewing：将所有 SQL 工单都转换为 <workflow_review_pass> 状态，一旦存在审核失败，将 Jira 状态触发 <SQL执行失败> 转换到 <SQL PENDING>
-            # workflow_review_pass：按顺序执行 SQL 工单，一旦失败终止当前及后续 SQL 工单，将 Jira 状态转换为 <SQL PENDING>
-            # workflow_queuing / workflow_exception：终止流程
-            # workflow_finish：所有工单执行完成，将 Jira 状态触发 <SQL执行成功> 转换到 <CONFIG PROCESSING>
-
-            # 开始升级 SQL
-            start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            d_logger.info(f"工单 {current_summary} 开始执行 SQL，开始时间：{start_time}")
-
-            # 获取 SqlWorkflow 表中所有待审核状态的 SQL 工单，已 sql_index 为排序顺序
-            audit_sql_obj = sql_workflow_ins.objects.filter(
-                workflow_name=current_summary,
-                w_status="workflow_manreviewing"
-            ).order_by("sql_index")
-            # 开始自动审核
-            audit_sql_list = [row for row in audit_sql_obj.values(
-                "w_id",
-                "workflow_name",
-                "w_status",
-                "sql_index",
-                'sql_release_info',
-                'sql_id')]
-            for audit_sql_data in audit_sql_list:
-                # SQL 工单 ID，通过唯一 ID 查询结果
-                w_id = audit_sql_data["w_id"]
-                select_result = archery_obj.get_workflows(w_id=w_id)
-                sql_workflow_status = select_result['data'][0]["status"]
-                audit_ins = audit_sql_obj.get(**audit_sql_data)
-                # 工单为待审核状态时，调用 archery_api 方法审核通过工单
-                if sql_workflow_status == "workflow_manreviewing":
-                    audit_result = archery_obj.audit_workflow(workflow_id=w_id)
-                    # 工单自动审核失败，不继续审核。将 Jira 工单转换为 <SQL PENDING> 状态
-                    if not audit_result["status"]:
-                        self.webhook_return_data["status"] = False
-                        self.webhook_return_data["msg"] = f"工单 {current_summary} 有 SQL 自动审核失败，失败原因：{audit_result['data']}"
-                        jira_obj.change_transition(current_issue_key, "SQLUpgradeFailed")
-                        break
-                    audit_ins.w_status = "workflow_review_pass"
-                else:
-                    audit_ins.w_status = sql_workflow_status
-                # 保存状态到 sql_workflow 表
-                audit_ins.save()
-            # 自动审核结束，确认是否还存在 workflow_manreviewing 状态工单
-            if audit_sql_obj:
-                self.webhook_return_data["status"] = False
-                self.webhook_return_data["msg"] = f"工单 {current_summary} 自动审核正常结束，但存在有非 <审核通过> 状态的工单"
-                jira_obj.change_transition(current_issue_key, "SQLUpgradeFailed")
+            # sql_info 数据为空，直接触发到下一流程
+            if not bool(current_sql_info):
+                jira_obj.change_transition(current_issue_key, "NoSqlUpgrade")
+                self.webhook_return_data["msg"] = f"无 SQL 升级，升级工单 {current_summary} 触发转换 <NoSqlUpgrade> 到状态 <CONFIG PROCESSING>"
                 return self.webhook_return_data
 
-            # 获取 SqlWorkflow 表中所有审核通过状态的 SQL 工单
-            sql_id_list = [item['sql_id'] for item in current_sql_info if not item["has_deploy_uat"]]
-            execute_sql_obj = sql_workflow_ins.objects.filter(
-                workflow_name=current_summary,
-                w_status="workflow_review_pass",
-                sql_id__in=sql_id_list
-            ).order_by("sql_index")
-            # 开始自动执行，根据 current_sql_info 中 sql_id 获取需要审核执行的 sql
-            execute_sql_list = [row for row in execute_sql_obj.values(
-                "w_id",
-                "workflow_name",
-                "w_status",
-                "sql_index",
-                'sql_release_info',
-                'sql_id')]
-            # 只有 sql_id 存在且 has_deploy_uat 为 False 的工单才执行
-            for execute_sql_data in execute_sql_list:
-                # SQL 工单 ID，通过唯一 ID 查询结果
-                w_id = execute_sql_data["w_id"]
-                # select_result = archery_obj.get_workflows(w_id=w_id)
-                # sql_workflow_status = select_result['data'][0]["status"]
-                execute_ins = execute_sql_obj.get(**execute_sql_data)
+            # sql_info 数据不为空，调用 sql_submit_handle 函数提交 SQL
+            sql_submit_res = sql_submit_handle(
+                sql_info=current_sql_info,
+                environment=current_environment
+            )  # TODO
 
-                # 工单为审核通过时，调用 archery_api 方法执行工单
-                execute_result = archery_obj.execute_workflow(workflow_id=w_id)
-                # 工单自动执行失败，终止执行。将 Jira 工单转换为 <SQL PENDING> 状态
-                if not execute_result["status"]:
-                    self.webhook_return_data["status"] = False
-                    self.webhook_return_data[
-                        "msg"] = f"工单 {current_summary}  SQL 调用 archery 执行 SQL 接口失败，失败原因：{execute_result['data']}"
-                    jira_obj.change_transition(current_issue_key, "SQLUpgradeFailed")
-                    break
-                # 成功触发执行后等待15s，否则工单可能为 workflow_queuing | workflow_executing 状态。等待后再次查询状态，不成功终止后续 SQL 自动执行
-                # sleep(15)
-                select_execute_result = archery_obj.get_workflows(w_id=w_id)
-                execute_status = select_execute_result['data'][0]["status"]
-                execute_ins.w_status = execute_status
-                execute_ins.save()
-                d_logger.info(f"{current_summary} SQL 执行成功, SQL 版本: {execute_sql_data['sql_release_info']}, SQL ID: {execute_sql_data['sql_id']}")
-                if not execute_status == "workflow_finish":
-                    self.webhook_return_data["status"] = False
-                    self.webhook_return_data[
-                        "msg"] = f"工单 {current_summary}  存在执行结果为异常的 SQL，失败原因：{execute_result['data']}"
-                    jira_obj.change_transition(current_issue_key, "SQLUpgradeFailed")
-                    break
-            # 自动执行结束，核实是否还存在 workflow_review_pass 状态工单
-            if execute_sql_obj:
+            # sql 提交成功，执行流程转换状态到下一步
+            if sql_submit_res["status"]:
+                jira_obj.change_transition(current_issue_key, "SubmitSqlSuccessful")
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <SubmitSqlSuccessful> 到状态 <SQL PROCESSING>"
+            # sql 提交失败，流程跳转 FIX PENDING
+            else:
+                jira_obj.change_transition(current_issue_key, "SubmitSqlFailed")
                 self.webhook_return_data["status"] = False
-                self.webhook_return_data[
-                    "msg"] = f"工单 {current_summary} 自动执行正常结束，但存在有非 <已正常结束> 状态的工单"
-                return self.webhook_return_data
-
-            # SQl 升级结束，无代码升级则直接发出邮件
-            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            d_logger.info(f"工单 {current_summary} 执行 SQL 结束，结束时间：{end_time}")
-            if not current_code_info or not compare_list_info(last_sql_info, current_code_info):
-                upgrade_info_list = []
-                d_logger.info(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
-
-            # SQL 升级成功，转换 Jira 工单状态
-            self.webhook_return_data[
-                "msg"] = f"升级工单 {current_summary} 所有 SQL 执行成功，触发转换 <SQLUpgradeSuccessful> 到状态 <CONFIG PROCESSING>"
-            jira_obj.change_transition(current_issue_key, "SQLUpgradeSuccessful")
-        except AssertionError as err:
-            self.webhook_return_data["status"] = False
-            self.webhook_return_data["msg"] = err.__str__()
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <SubmitSqlFailed> 到状态 <FIX PENDING>"
         except Exception as err:
-            tb_str = traceback.format_exc()
             self.webhook_return_data["status"] = False
-            # self.webhook_return_data["msg"] = f"<SQL PROCESSING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
-            self.webhook_return_data["msg"] = f"<SQL PROCESSING> 状态 webhook 触发失败，异常原因：{tb_str}"
+            self.webhook_return_data["msg"] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{traceback.format_exc()}"
+            jira_obj.change_transition(current_issue_key, "SubmitSqlFailed")
+        self.webhook_return_data['data'] = current_issue_data
+        return self.webhook_return_data
+
+    def updated_event_sql_processing(
+            self,
+            last_issue_obj: Any,
+            sql_workflow_ins: Any,
+            current_issue_data: Dict
+    ) -> Dict:
+        # 更新 JiraIssue 表数据
+        last_issue_obj.init_flag["sql_init_flag"] += 1
+        last_issue_obj.status = "SQL PROCESSING"
+        last_issue_obj.save()
+
+        # 获取工单数据信息
+        current_issue_key = current_issue_data["issue_key"]
+        current_sql_info = current_issue_data["sql_info"]
+        current_summary = current_issue_data["summary"]
+        current_environment = current_issue_data["environment"]
+
+        try:
+            # 调用 sql_upgrade_handle 函数执行配置自动变更
+            sql_upgrade_res = sql_upgrade_handle(
+                sql_info=current_sql_info,
+                environment=current_environment
+            ) # TODO
+
+            # sql 升级成功，执行流程转换状态到下一步
+            if sql_upgrade_res["status"]:
+                jira_obj.change_transition(current_issue_key, "SqlUpgradeSuccessful")
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <SqlUpgradeSuccessful> 到状态 <CONFIG PROCESSING>"
+            # sql 升级失败，流程跳转 FIX PENDING
+            else:
+                jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
+                self.webhook_return_data["status"] = False
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <SqlUpgradeFailed> 到状态 <FIX PENDING>"
+        except Exception as err:
+            self.webhook_return_data["status"] = False
+            self.webhook_return_data["msg"] = f"<SQL PENDING> 状态 webhook 触发失败，异常原因：{traceback.format_exc()}"
+            jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
+        self.webhook_return_data['data'] = current_issue_data
         return self.webhook_return_data
 
     def updated_event_config_processing(
@@ -367,34 +158,40 @@ class JiraEventWebhookAPI(JiraWebhookData):
         last_issue_obj.status = "CONFIG PROCESSING"
         last_issue_obj.save()
 
-        try:
-            # 获取工单数据信息
-            # last_nacos_info = last_issue_obj.nacos_info
-            current_issue_key = current_issue_data["issue_key"]
-            current_nacos_info = current_issue_data["nacos_info"]
-            current_summary = current_issue_data["summary"]
-            current_product_id = current_issue_data["product_id"]
-            current_environment = current_issue_data["environment"]
+        # 获取 nacos_info 数据信息
+        # last_nacos_info = last_issue_obj.nacos_info
+        current_issue_key = current_issue_data["issue_key"]
+        current_nacos_info = current_issue_data["nacos_info"]
+        current_summary = current_issue_data["summary"]
+        current_product_id = current_issue_data["product_id"]
+        current_environment = current_issue_data["environment"]
 
+        try:
             # nacos_info 数据为空，直接触发到下一流程
             if not bool(current_nacos_info):
                 jira_obj.change_transition(current_issue_key, "NoConfigUpgrade")
                 self.webhook_return_data["msg"] = f"无配置升级，升级工单 {current_summary} 触发转换 <NoConfigUpgrade> 到状态 <CODE PROCESSING>"
+
             # nacos_info 数据不为空，调用 nacos_handle 函数执行配置自动变更
+            nacos_res = nacos_handle(
+                nacos_info=current_nacos_info,
+                product_id=current_product_id,
+                environment=current_environment
+            )
+
+            # nacos 变更执行成功，执行流程转换状态到下一步
+            if nacos_res["status"]:
+                jira_obj.change_transition(current_issue_key, "ConfigUpgradeSuccessful")
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行成功"
+            # 变更执行失败，流程跳转 FIX PENDING
             else:
-                nacos_res = nacos_handle(current_nacos_info, current_product_id, current_environment)
-                # nacos 变更执行成功，执行流程转换状态到下一步
-                if nacos_res["status"]:
-                    jira_obj.change_transition(current_issue_key, "ConfigUpgradeSuccessful")
-                    self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <ConfigUpgradeSuccessful> 到状态 <CODE PROCESSING>"
-                # 变更执行失败，抛出异常，流程跳转 FIX PENDING
-                else:
-                    jira_obj.change_transition(current_issue_key, "ConfigUpgradeFailed")
-                    self.webhook_return_data["status"] = False
-                    self.webhook_return_data["msg"] = f"升级工单 {current_summary} 触发转换 <ConfigUpgradeFailed> 到状态 <FIX PENDING>"
+                jira_obj.change_transition(current_issue_key, "ConfigUpgradeFailed")
+                self.webhook_return_data["status"] = False
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行失败，返回：{nacos_res}"
         except Exception as err:
             self.webhook_return_data["status"] = False
-            self.webhook_return_data["msg"] = f"<CONFIG PROCESSING> 状态 webhook 触发失败，异常原因：{err.__str__()}"
+            self.webhook_return_data["msg"] = f"<CONFIG PROCESSING> 状态 webhook 触发失败，异常原因：{traceback.format_exc()}"
+            jira_obj.change_transition(current_issue_key, "ConfigUpgradeFailed")
         self.webhook_return_data['data'] = current_issue_data
         return self.webhook_return_data
 
@@ -411,21 +208,15 @@ class JiraEventWebhookAPI(JiraWebhookData):
         last_issue_obj.status = "CODE PROCESSING"
         last_issue_obj.save()
 
+        # 获取工单数据信息
+        current_issue_key = current_issue_data["issue_key"]
+        current_code_info = current_issue_data["code_info"]
+        current_summary = current_issue_data["summary"]
+        current_environment = current_issue_data["environment"]
+
         try:
-            # 获取工单数据信息
-            last_code_info = last_issue_obj.code_info
-            code_init_flag = last_issue_obj.init_flag["code_init_flag"]
-            current_issue_key = current_issue_data["issue_key"]
-            current_code_info = current_issue_data["code_info"]
-            current_summary = current_issue_data["summary"]
-            current_environment = current_issue_data["environment"]
-
-            # 转为列表数据
-            # last_code_info_list = format_code_info(last_code_info, current_environment)
-            current_code_info_list = format_code_info(current_code_info, current_environment)
-
             # code_info 数据为空，直接触发到下一流程
-            if not bool(current_code_info_list):
+            if not bool(current_code_info):
                 last_issue_obj.status = "UPGRADED DONE"
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.save()
@@ -435,7 +226,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
             # TODO: 多次迭代升级代码时，只升级差异部分
 
-            # 待升级的 code_info 列表数据
+            # 待升级的 code_info 列表数据，需转化为列表数据格式
+            current_code_info_list = format_code_info(current_code_info, current_environment)
             wait_upgrade_list = current_code_info_list
             # 成功升级的列表数据
             upgrade_success_list = []
@@ -445,7 +237,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             # 升级代码主逻辑
             start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             d_logger.info(f"工单 {current_summary} 开始升级代码，开始时间：{start_time}")
-            upgrade_success_list, upgrade_info_list = thread_code_upgrade(
+            upgrade_success_list, upgrade_info_list = thread_code_handle(
                 wait_upgrade_list,
                 upgrade_success_list,
                 upgrade_info_list
@@ -457,29 +249,17 @@ class JiraEventWebhookAPI(JiraWebhookData):
             if upgrade_success_list == current_code_info_list or not compare_list_info(upgrade_success_list, current_code_info_list):
                 last_issue_obj.status = "UPGRADED DONE"
                 last_issue_obj.code_info = current_code_info
-                last_issue_obj.init_flag["code_init_flag"] += 1
                 last_issue_obj.save()
-                self.webhook_return_data["msg"] = f"代码升级成功，升级工单 {current_summary} 触发转换 <CodeUpgradeSuccessful> 到状态 <UPGRADED DONE>"
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级成功"
                 self.webhook_return_data['data'] = {"已升级信息列表": upgrade_info_list}
                 jira_obj.change_transition(current_issue_key, "CodeUpgradeSuccessful")
                 # 发送升级成功邮件通知
                 d_logger.info(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
             else:
-                last_issue_obj.status = "FIX PENDING"
-                last_issue_obj.code_info = upgrade_success_list
-                last_issue_obj.init_flag["code_init_flag"] += 1
-                last_issue_obj.save()
                 self.webhook_return_data["status"] = False
-                self.webhook_return_data[
-                    "msg"] = f"CodeUpgradeFailed，升级工单 {current_summary} 触发转换 <CodeUpgradeFailed> 到状态 <FIX PENDING>"
-                # self.webhook_return_data['data'] = current_issue_data
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级失败，检查日志"
                 jira_obj.change_transition(current_issue_key, "CodeUpgradeFailed")
         except Exception as err:
-            # 抛异常时记录 code 升级次数，确保下次升级使用 Jira 中数据而不是 DB 中初始化的升级数据
-            last_issue_obj.status = "FIX PENDING"
-            last_issue_obj.code_info = list()
-            last_issue_obj.init_flag["code_init_flag"] += 1
-            last_issue_obj.save()
             self.webhook_return_data["status"] = False
             self.webhook_return_data["msg"] = f"<CODE PROCESSING> 状态 webhook 触发失败，异常原因：{traceback.format_exc()}"
             jira_obj.change_transition(current_issue_key, "CodeUpgradeFailed")
@@ -488,11 +268,14 @@ class JiraEventWebhookAPI(JiraWebhookData):
 
     def updated_event_fix_pending(
             self,
-            summary: str
+            last_issue_obj: Any
     ):
+        last_issue_obj.status = "FIX PENDING"
+        last_issue_obj.save()
+        summary = last_issue_obj.summary
+
         try:
             self.webhook_return_data["msg"] = f"工单 {summary} <FIX PENDING> 状态 webhook 触发成功，等待人工修复数据"
-            return self.webhook_return_data
         except Exception as err:
             self.webhook_return_data["status"] = False
             self.webhook_return_data["msg"] = f"工单 {summary} <FIX PENDING> 状态 webhook 触发失败，异常原因：{err.__str__()}"

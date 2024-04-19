@@ -24,7 +24,6 @@ from pprint import pprint
 #     )
 # )
 
-
 # from cicdflow_util import thread_upgrade
 # wait_upgrade_list = [
 #     {"svn_path": "/qc/rex-task-center", "code_version": 5103, "svn_version": 5103, "tag": "", "project_name": "rex-task-center"},
@@ -50,10 +49,24 @@ from pprint import pprint
 # jira_obj = JiraAPI()
 # pprint(jira_obj.get_issue_info(issue_id=28021))
 # pprint(jira_obj.change_transition("UP-7", "ToUpgradeUAT"))
-from utils.jira_api import JiraWebhookData
-request_data = {}
-jira_event_webhook_obj = JiraWebhookData(request_data)
-res = jira_event_webhook_obj.get_custom_issue_data()
-print(res)
-print(jira_event_webhook_obj.webhook_event)
+# from utils.jira_api import JiraWebhookData
+# request_data = {}
+# jira_event_webhook_obj = JiraWebhookData(request_data)
+# res = jira_event_webhook_obj.get_custom_issue_data()
+# print(res)
+# print(jira_event_webhook_obj.webhook_event)
+
+
+# cicdflow_utils.py
+from cicdflow_utils import *
+# nacos_info = "map-test.propertles@@add@@map-testkey@@map-testvalue\r\nmap-test-2.propertles@@update@@server.dns@@1.1.1.1\r\nmap-test-2.propertles@@delete@@need_delete_key"
+# # pprint(format_nacos_info(nacos_info))
+# print(nacos_handle(
+#     nacos_info=nacos_info,
+#     product_id='ISLOT',
+#     environment='UAT'
+# ))
+code_info = "backend-islot-api-gci@@346f5638a670e06a72c22d7bbcea5a4498da8113@@v4\r\nbackend-islot-api-report@@a41557a52ee242000baf42ca5a6658eab5b97929@@v4"
+print(format_code_info(code_info=code_info, environment="UAT"))
+
 
