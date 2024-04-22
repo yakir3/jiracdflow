@@ -6,33 +6,33 @@ from pprint import pprint
 
 
 # Archery
-from utils.archery_api import ArcheryAPI
-archery_config = GetYamlConfig().get_config("Archery")
-assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
-archery_host = archery_config.get("uat_host")
-archery_obj = ArcheryAPI(
-    host=archery_host,
-    username=archery_config.get("username"),
-    password=archery_config.get("password")
-)
+# from utils.archery_api import ArcheryAPI
+# archery_config = GetYamlConfig().get_config("Archery")
+# assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
+# archery_host = archery_config.get("uat_host")
+# archery_obj = ArcheryAPI(
+#     host=archery_host,
+#     username=archery_config.get("username"),
+#     password=archery_config.get("password")
+# )
 # pprint(archery_obj.get_workflows(w_id=303))
-pprint(archery_obj.get_resource_groups())
+# pprint(archery_obj.get_resource_groups())
 # pprint(archery_obj.get_instances(instance_name="isagent-report"))
 
 
 
 # CMDB
-# from utils.cmdb_api import CmdbAPI
-# cmdb_config = GetYamlConfig().get_config("CMDB")
-# assert cmdb_config, f"获取 CMDB 配置信息失败，检查 config.yaml 配置文件。"
-# cmdb_host = cmdb_config.get('host')
-# cmdb_token = cmdb_config.get('token')
-# # 创建 CMDB 对象
-# cmdb_obj = CmdbAPI(
-#     host=cmdb_host,
-#     token=cmdb_token
-# )
-# pprint(cmdb_obj.search_by_project_name(project_name="backend-islot-office-api", tag="v3"))
+from utils.cmdb_api import CmdbAPI
+cmdb_config = GetYamlConfig().get_config("CMDB")
+assert cmdb_config, f"获取 CMDB 配置信息失败，检查 config.yaml 配置文件。"
+cmdb_host = cmdb_config.get('host')
+cmdb_token = cmdb_config.get('token')
+# 创建 CMDB 对象
+cmdb_obj = CmdbAPI(
+    host=cmdb_host,
+    token=cmdb_token
+)
+pprint(cmdb_obj.search_by_project_name(project_name="backend-islot-api-report", tag="v4"))
 # pprint(
 #     cmdb_obj.project_deploy(
 #         project_name="backend-islot-office-api",

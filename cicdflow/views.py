@@ -19,10 +19,11 @@ d_logger = logging.getLogger("default_logger")
 class JiraFlowView(APIView):
     """
     webhook 触发条件:
-        project = UPGRADE AND issuetype = 升级 AND status in ("SQL PENDING", "SQL PROCESSING","CONFIG PROCESSING", "CODE PROCESSING","FIX PENDING")
+        project = UPGRADE AND issuetype = 升级 AND status in ("REVIEW PENDING", "SQL PENDING", "SQL PROCESSING","CONFIG PROCESSING", "CODE PROCESSING","FIX PENDING")
     webhook 事件类型:
         jira:issue_created = issue 创建事件，初始化升级数据，开始升级流程。
         jira:issue_updated = issue 更新事件，更新升级数据，已 webhook 中数据执行对应处理逻辑。
+            REVIEW PENDING: xxx
             SQL PENDING: 判断是否存在 SQL，存在则提交到 Archery。
             SQL PROCESSING: 判断是否存在待执行 SQL，存在则触发 Archery API 自动执行。
             CONFIG PROCESSING: 由运维人员人工触发进入下一步。
@@ -81,6 +82,8 @@ class JiraFlowView(APIView):
             issue_key = webhook_data.get("issue_key")
             issue_status = webhook_data.get("issue_status")
             summary = webhook_data.get("summary")
+            d_logger.info(webhook_data)
+            d_logger.info(webhook_event)
 
             # 暂时不处理运营环境 webhook
             if webhook_environment == "PROD":
@@ -117,15 +120,12 @@ class JiraFlowView(APIView):
                         webhook_result = jira_event_webhook_obj.updated_event_sql_pending(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jira_issue_ser_data,
-                            # sqlworkflow_ser=SqlWorkflowSerializer,
-                            # sql_workflow_ins=SqlWorkflow
                         )
                     # SQL PROCESSING 状态
                     case "SQL PROCESSING":
                         webhook_result = jira_event_webhook_obj.updated_event_sql_processing(
                             last_issue_obj=last_issue_obj,
                             current_issue_data=jira_issue_ser_data
-                            # sql_workflow_ins=SqlWorkflow,
                         )
                     # CONFIG PROCESSING 状态
                     case "CONFIG PROCESSING":

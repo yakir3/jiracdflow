@@ -8,7 +8,7 @@ __all__ = ["JiraWebhookData", "JiraAPI"]
 class JiraWebhookData(object):
     """
     初始化 Jira webhook 请求数据，格式化为 JiraIssueSerializer 序列化器格式
-    customfield_10700: 产品 ID
+    customfield_11113: 项目名称
     customfield_11100: 功能列表
     customfield_11104: 升级类型
     customfield_11106: 是否关厅
@@ -50,8 +50,7 @@ class JiraWebhookData(object):
         # jira_project 数据
         self.jira_project = issue_fields.get("project").get("name")
         # product_id 数据
-        product_id_list = issue_fields.get("customfield_10700")
-        self.product_id = ",".join([p.get("value") for p in product_id_list if p.get("value")])
+        self.product_id = issue_fields.get("customfield_11113").get("value")
         # summary 数据
         self.summary = issue_fields.get("summary")
         # issue_status 数据

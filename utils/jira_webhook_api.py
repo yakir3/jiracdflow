@@ -105,7 +105,6 @@ class JiraEventWebhookAPI(JiraWebhookData):
     def updated_event_sql_processing(
             self,
             last_issue_obj: Any,
-            sql_workflow_ins: Any,
             current_issue_data: Dict
     ) -> Dict:
         # 更新 JiraIssue 表数据
@@ -120,21 +119,28 @@ class JiraEventWebhookAPI(JiraWebhookData):
         current_environment = current_issue_data["environment"]
 
         try:
-            # 调用 sql_upgrade_handle 函数执行配置自动变更
-            sql_upgrade_res = sql_upgrade_handle(
-                sql_info=current_sql_info,
-                environment=current_environment
-            ) # TODO
-
-            # sql 升级成功，流程转换到下一步
-            if sql_upgrade_res["status"]:
-                jira_obj.change_transition(current_issue_key, "SqlUpgradeSuccessful")
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级成功，转换到状态 <CONFIG PROCESSING>"
-            # sql 升级失败，流程转换 FIX PENDING
-            else:
-                jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
-                self.webhook_return_data["status"] = False
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级失败，转换到状态 <FIX PENDING>"
+            pass
+            # # 升级 SQL 主逻辑
+            # start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # d_logger.info(f"工单 {current_summary} 开始执行 SQL，开始时间：{start_time}")
+            # # 调用 sql_upgrade_handle 函数执行配置自动变更
+            # sql_upgrade_res = sql_upgrade_handle(
+            #     workflow_name=current_summary,
+            #     sql_info=current_sql_info,
+            #     environment=current_environment
+            # )
+            # end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # d_logger.info(f"工单 {current_summary} 执行 SQL 结束，结束时间：{end_time}")
+            #
+            # # sql 升级成功，流程转换到下一步
+            # if sql_upgrade_res["status"]:
+            #     jira_obj.change_transition(current_issue_key, "SqlUpgradeSuccessful")
+            #     self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级成功，转换到状态 <CONFIG PROCESSING>"
+            # # sql 升级失败，流程转换 FIX PENDING
+            # else:
+            #     jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
+            #     self.webhook_return_data["status"] = False
+            #     self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级失败，转换到状态 <FIX PENDING>"
         except Exception as err:
             self.webhook_return_data["status"] = False
             self.webhook_return_data["msg"] = f"升级工单 {current_summary} <SQL PROCESSING> webhook 触发失败，异常原因：{traceback.format_exc()}"
@@ -165,27 +171,28 @@ class JiraEventWebhookAPI(JiraWebhookData):
         current_environment = current_issue_data["environment"]
 
         try:
-            # nacos_info 数据为空，直接触发到下一流程
-            if not bool(current_nacos_info):
-                jira_obj.change_transition(current_issue_key, "NoConfigUpgrade")
-                self.webhook_return_data["msg"] = f"无配置升级，升级工单 {current_summary} 转换到状态 <CODE PROCESSING>"
-
-            # nacos_info 数据不为空，调用 nacos_handle 函数执行配置自动变更
-            nacos_res = nacos_handle(
-                nacos_info=current_nacos_info,
-                product_id=current_product_id,
-                environment=current_environment
-            )
-
-            # nacos 变更执行成功，执行流程转换状态到下一步
-            if nacos_res["status"]:
-                jira_obj.change_transition(current_issue_key, "ConfigUpgradeSuccessful")
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行成功，转换到状态 <CODE PROCESSING>"
-            # 变更执行失败，流程跳转 FIX PENDING
-            else:
-                jira_obj.change_transition(current_issue_key, "ConfigUpgradeFailed")
-                self.webhook_return_data["status"] = False
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行失败，返回：{nacos_res}"
+            pass
+            # # nacos_info 数据为空，直接触发到下一流程
+            # if not bool(current_nacos_info):
+            #     jira_obj.change_transition(current_issue_key, "NoConfigUpgrade")
+            #     self.webhook_return_data["msg"] = f"无配置升级，升级工单 {current_summary} 转换到状态 <CODE PROCESSING>"
+            #
+            # # nacos_info 数据不为空，调用 nacos_handle 函数执行配置自动变更
+            # nacos_res = nacos_handle(
+            #     nacos_info=current_nacos_info,
+            #     product_id=current_product_id,
+            #     environment=current_environment
+            # )
+            #
+            # # nacos 变更执行成功，执行流程转换状态到下一步
+            # if nacos_res["status"]:
+            #     jira_obj.change_transition(current_issue_key, "ConfigUpgradeSuccessful")
+            #     self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行成功，转换到状态 <CODE PROCESSING>"
+            # # 变更执行失败，流程跳转 FIX PENDING
+            # else:
+            #     jira_obj.change_transition(current_issue_key, "ConfigUpgradeFailed")
+            #     self.webhook_return_data["status"] = False
+            #     self.webhook_return_data["msg"] = f"升级工单 {current_summary} Nacos 配置变更执行失败，返回：{nacos_res}"
         except Exception as err:
             self.webhook_return_data["status"] = False
             self.webhook_return_data["msg"] = f"升级工单 {current_summary} <CONFIG PROCESSING> webhook 触发失败，异常原因：{traceback.format_exc()}"

@@ -49,11 +49,18 @@ class CmdbAPI:
                 "name": real_project_name
             }
             cmdb_req = requests.get(url=self.search_url, json=data, headers=self._api_headers)
+
+            # 根据返回状态返回结果
             if cmdb_req.status_code == 200:
                 cmdb_req_json = cmdb_req.json()
+                # fix: 工程名前缀相同时，取回完整匹配 project item info
+                project_items = cmdb_req_json['data']['items']
+                real_project_item = [p for p in project_items if p['project']['service_name'] == project_name]
+                pid = real_project_item[0]["id"]
+
                 return_data["status"] = True
                 return_data["msg"] = "查询<升级发布>工程 ID 成功"
-                return_data["pid"] = cmdb_req_json["data"]["items"][0]["id"]
+                return_data["pid"] = pid
             else:
                 return_data["msg"] = f"查询 CMDB <升级发布>接口返回非200状态, 返回数据 {cmdb_req.text}"
         except Exception as err:
