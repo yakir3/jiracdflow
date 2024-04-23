@@ -65,7 +65,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
     ) -> Dict:
         # 更新 JiraIssue 表数据
         last_issue_obj.init_flag["sql_init_flag"] += 1
-        last_issue_obj.status = "SQL PENDING"
+        last_issue_obj.issue_status = "SQL PENDING"
         last_issue_obj.save()
 
         # 获取工单数据信息
@@ -82,11 +82,16 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 return self.webhook_return_data
 
             # sql_info 数据不为空，调用 sql_submit_handle 函数提交 SQL
+            start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            d_logger.info(f"工单 {current_summary} 开始提交 SQL，开始时间：{start_time}")
             sql_submit_res = sql_submit_handle(
                 workflow_name=current_summary,
                 sql_info=current_sql_info,
                 environment=current_environment
             )
+            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            d_logger.info(f"工单 {current_summary} 提交 SQL 结束，结束时间：{end_time}")
+
 
             # sql 提交成功，流程转换状态到下一步
             if sql_submit_res["status"]:
@@ -111,7 +116,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
     ) -> Dict:
         # 更新 JiraIssue 表数据
         last_issue_obj.init_flag["sql_init_flag"] += 1
-        last_issue_obj.status = "SQL PROCESSING"
+        last_issue_obj.issue_status = "SQL PROCESSING"
         last_issue_obj.save()
 
         # 获取工单数据信息
@@ -161,7 +166,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
         # 更新 JiraIssue 表数据
         last_issue_obj.init_flag["nacos_init_flag"] += 1
         last_issue_obj.init_flag["config_init_flag"] += 1
-        last_issue_obj.status = "CONFIG PROCESSING"
+        last_issue_obj.issue_status = "CONFIG PROCESSING"
         last_issue_obj.save()
 
         # 获取 nacos_info 数据信息
@@ -181,11 +186,15 @@ class JiraEventWebhookAPI(JiraWebhookData):
                 self.webhook_return_data["msg"] = f"有配置升级，等待人工处理。升级工单 {current_summary} 状态不变"
 
             # # nacos_info 数据不为空，调用 nacos_handle 函数执行配置自动变更
+            # start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # d_logger.info(f"工单 {current_summary} 开始配置变更，开始时间：{start_time}")
             # nacos_res = nacos_handle(
             #     nacos_info=current_nacos_info,
             #     product_id=current_product_id,
             #     environment=current_environment
             # )
+            # end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # d_logger.info(f"工单 {current_summary} 配置变更结束，结束时间：{end_time}")
             #
             # # nacos 变更执行成功，执行流程转换状态到下一步
             # if nacos_res["status"]:
@@ -213,60 +222,53 @@ class JiraEventWebhookAPI(JiraWebhookData):
         """
         # 更新 JiraIssue 表数据
         last_issue_obj.init_flag["code_init_flag"] += 1
-        last_issue_obj.status = "CODE PROCESSING"
+        last_issue_obj.issue_status = "CODE PROCESSING"
         last_issue_obj.save()
 
         # 获取工单数据信息
+        last_code_info = last_issue_obj.code_info
         current_issue_key = current_issue_data["issue_key"]
         current_code_info = current_issue_data["code_info"]
         current_summary = current_issue_data["summary"]
+        current_product_id = current_issue_data["product_id"]
         current_environment = current_issue_data["environment"]
 
         try:
             # code_info 数据为空，直接触发到下一流程
             if not bool(current_code_info):
-                last_issue_obj.status = "UPGRADED DONE"
+                last_issue_obj.issue_status = "UPGRADED DONE"
                 last_issue_obj.code_info = current_code_info
                 last_issue_obj.save()
                 jira_obj.change_transition(current_issue_key, "NoCodeUpgrade")
                 self.webhook_return_data["msg"] = f"无代码需要升级，升级工单 {current_summary} 转换到状态 <UPGRADED DONE>"
                 return self.webhook_return_data
 
-            # TODO: 多次迭代升级代码时，只升级差异部分
+            # TODO: 判断是否首次升级？
 
-            # 待升级的 code_info 列表数据，需转化为列表数据格式
-            current_code_info_list = format_code_info(current_code_info, current_environment)
-            wait_upgrade_list = current_code_info_list
-            # 成功升级的列表数据
-            upgrade_success_list = []
-            # 升级成功的工程名称列表，用于邮件发送结果
-            upgrade_info_list = []
-
-            # 升级代码主逻辑
+            # code_info 数据不为空，调用 thread_code_handle 函数执行多线程升级代码
             start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             d_logger.info(f"工单 {current_summary} 开始升级代码，开始时间：{start_time}")
-            upgrade_success_list, upgrade_info_list = thread_code_handle(
-                wait_upgrade_list,
-                upgrade_success_list,
-                upgrade_info_list
+            code_res = thread_code_handle(
+                last_code_info=last_code_info,
+                current_code_info=current_code_info,
+                product_id=current_product_id,
+                environment=current_environment,
+                issue_key=current_issue_key
             )
             end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             d_logger.info(f"工单 {current_summary} 代码升级结束，结束时间：{end_time}")
 
-            # 只有全部升级成功才转换为 CodeUpgradeSuccessful，只要有失败的升级就转换为 CodeUpgradeFailed
-            if upgrade_success_list == current_code_info_list or not compare_list_info(upgrade_success_list, current_code_info_list):
-                last_issue_obj.status = "UPGRADED DONE"
-                last_issue_obj.code_info = current_code_info
-                last_issue_obj.save()
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级成功，转换到状态 <UPGRADE DONE>"
-                self.webhook_return_data['data'] = {"已升级信息列表": upgrade_info_list}
+            #  代码升级成功，执行流程转换状态到下一步
+            if code_res["status"]:
                 jira_obj.change_transition(current_issue_key, "CodeUpgradeSuccessful")
-                # 发送升级成功邮件通知
-                d_logger.info(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级成功，转换到状态 <UPGRADE DONE>"
+                # TODO: 升级成功邮件通知
+                # d_logger.info(completed_workflow_notice(start_time, end_time, current_summary, upgrade_info_list))
+            # 代码升级失败，流程跳转 FIX PENDING
             else:
-                self.webhook_return_data["status"] = False
-                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级失败，检查 CMDB 返回内容"
                 jira_obj.change_transition(current_issue_key, "CodeUpgradeFailed")
+                self.webhook_return_data["status"] = False
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} 代码升级失败，返回结果：{code_res}"
         except Exception as err:
             self.webhook_return_data["status"] = False
             self.webhook_return_data["msg"] = f"升级工单 {current_summary} <CODE PROCESSING> webhook 触发失败，异常原因：{traceback.format_exc()}"
@@ -278,7 +280,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
             self,
             last_issue_obj: Any
     ):
-        last_issue_obj.status = "FIX PENDING"
+        last_issue_obj.issue_status = "FIX PENDING"
         last_issue_obj.save()
         summary = last_issue_obj.summary
 

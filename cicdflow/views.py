@@ -19,10 +19,8 @@ d_logger = logging.getLogger("default_logger")
 class JiraFlowView(APIView):
     """
     webhook 触发条件:
-        # only prod
-        project = UPGRADE AND issuetype = 升级 AND status in ("REVIEW PENDING", "SQL PENDING", "SQL PROCESSING","CONFIG PROCESSING", "CODE PROCESSING","FIX PENDING")
-        # all
         project = UPGRADE AND issuetype = 升级 AND status in ("SQL PENDING", "SQL PROCESSING","CONFIG PROCESSING", "CODE PROCESSING","FIX PENDING")
+        project = UPGRADE AND issuetype = 升级
     webhook 事件类型:
         jira:issue_created = issue 创建事件，初始化升级数据，开始升级流程。
         jira:issue_updated = issue 更新事件，更新升级数据，已 webhook 中数据执行对应处理逻辑。
@@ -146,7 +144,7 @@ class JiraFlowView(APIView):
                             last_issue_obj=last_issue_obj
                         )
                     case _:
-                        msg = f"工单：{summary} 当前 issue 状态为 <{issue_status}>，不需要触发下一步流程，不更新 issue 数据，忽略状态转换"
+                        msg = f"工单：{summary} 当前 issue 状态为 <{issue_status}>，无需操作触发下一步流程，忽略状态转换"
                         webhook_result = {"status": True, "msg": msg}
             else:
                 raise KeyError("jira webhook event 事件不为 created 或 updated，请检查 webhook event 类型")

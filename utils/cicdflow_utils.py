@@ -6,9 +6,6 @@ from time import sleep
 import traceback
 import re
 
-from cicdflow.models import SqlWorkflow
-from cicdflow.serializers import SqlWorkflowSerializer
-
 from utils.archery_api import ArcheryAPI
 from utils.cmdb_api import CmdbAPI
 from utils.getconfig import GetYamlConfig
@@ -92,6 +89,8 @@ def sql_submit_handle(
         )
 
         # 创建 SqlWorkflow, SqlWorkflowSerializer 对象
+        from cicdflow.models import SqlWorkflow
+        from cicdflow.serializers import SqlWorkflowSerializer
         sqlworkflow_obj = SqlWorkflow()
         sqlworkflow_ser_obj = SqlWorkflowSerializer()
 
@@ -196,6 +195,8 @@ def sql_upgrade_handle(
         )
 
         # 创建 SqlWorkflow, SqlWorkflowSerializer 对象
+        from cicdflow.models import SqlWorkflow
+        # from cicdflow.serializers import SqlWorkflowSerializer
         sqlworkflow_obj = SqlWorkflow()
         # sqlworkflow_ser_obj = SqlWorkflowSerializer()
 
@@ -392,7 +393,8 @@ def nacos_handle(
 # 格式化代码数据
 def format_code_info(
         code_info: str = None,
-        environment: str = "UAT"
+        environment: str = "UAT",
+        vmc_host: str = None
 ) -> List:
     code_info_list = []
     if code_info:
@@ -400,10 +402,11 @@ def format_code_info(
         for i in code_info.split("\r\n"):
             tmp_dict = dict()
             tmp_info = i.split("@@")
-            tmp_dict["project_name"] = tmp_info[0]
+            tmp_dict["service_name"] = tmp_info[0]
             tmp_dict["code_version"] = tmp_info[1]
-            tmp_dict["tag"] = tmp_info[2]
+            tmp_dict["branch"] = tmp_info[2]
             tmp_dict["environment"] = environment
+            tmp_dict["vmc_host"] = vmc_host
             code_info_list.append(tmp_dict)
     return code_info_list
 
@@ -445,61 +448,85 @@ def completed_workflow_notice(
 
 # 多线程方式升级代码
 def thread_code_handle(
-        wait_upgrade_list: List,
-        upgrade_success_list: List,
-        upgrade_info_list: List
-    ) -> Tuple[List, List]:
-    # 获取 CMDB 配置信息
-    cmdb_config = GetYamlConfig().get_config("CMDB")
-    assert cmdb_config, f"获取 CMDB 配置信息失败，检查 config.yaml 配置文件。"
-    cmdb_host = cmdb_config.get('host')
-    cmdb_token = cmdb_config.get('token')
+        last_code_info: str = None,
+        current_code_info: str = None,
+        product_id: str = None,
+        environment: str = None,
+        issue_key: str = None
+    ) -> Dict:
+    return_data = {
+        "status": False,
+        "msg": "",
+        "data": dict()
+    }
+    try:
+        # 获取 CMDB 配置信息
+        cmdb_config = GetYamlConfig().get_config("CMDB")
+        cmdb_env_config = cmdb_config.get(environment).get(product_id)
+        assert cmdb_config or cmdb_env_config, f"获取 CMDB 配置信息失败，检查 config.yaml 配置文件。"
+        cmdb_host = cmdb_config.get("host")
+        cmdb_token = cmdb_config.get("token")
+        cmdb_vmc_host = cmdb_env_config.get("vmc_host")
 
-    # 创建 CMDB 对象
-    cmdb_obj = CmdbAPI(
-        host=cmdb_host,
-        token=cmdb_token
-    )
+        # 创建 CMDB 对象
+        cmdb_obj = CmdbAPI(
+            host=cmdb_host,
+            token=cmdb_token
+        )
 
-    # 延迟升级，等待 harbor 镜像同步到 gcp
-    if len(wait_upgrade_list) <= 3:
-        sleep(30)
-    elif 3 < len(wait_upgrade_list) <= 6:
-        sleep(75)
-    else:
-        sleep(90)
-    with ThreadPoolExecutor(max_workers=12) as executor:
-        # 循环待升级代码列表，调用 CMDB 对象 project_deploy 方法升级代码
-        futures = []
-        for wait_upgrade_ins in wait_upgrade_list:
-            # d_logger.info(wait_upgrade_ins)
-            future = executor.submit(cmdb_obj.project_deploy, **wait_upgrade_ins)
-            futures.append(future)
+        # 创建 JiraIssue 对象，获取工单实例
+        from cicdflow.models import JiraIssue
+        jira_issue_obj = JiraIssue.objects.get(
+            issue_key=issue_key
+        )
 
-        # 循环升级结果列表，根据列表状态返回升级结果
-        upgrade_result_list = [future.result() for future in futures]
-        for upgrade_result in upgrade_result_list:
-            upgrade_data = upgrade_result['data']
-            # 升级成功记录数据
-            if upgrade_result["status"]:
-                # 升级成功的数据放入 upgrade_success_list
-                upgrade_success_list.append(upgrade_data)
-                upgrade_info_list.append(f"{upgrade_data['project_name']:25s} 升级版本: {upgrade_data['code_version']}")
-                # 日志记录升级消息
-                d_logger.info(upgrade_result["msg"])
-            # 多进程方式升级失败，继续尝试2次升级重试
-            else:
-                # 日志记录升级错误消息
-                d_logger.error(upgrade_result["msg"])
-                # # CodeUpgradeFailed 重试机制，等待10s重试2次升级
-                # retry_flag = 0
-                # while retry_flag < 2:
-                #     sleep(10)
-                #     retry_result = cmdb_obj.project_deploy(**upgrade_data)
-                #     if retry_result["status"]:
-                #         upgrade_success_list.append(upgrade_data)
-                #         upgrade_info_list.append(f"{upgrade_data['project_name']:25s} 升级版本: {upgrade_data['code_version']}")
-                #         d_logger.info(retry_result["msg"])
-                #         break
-                #     retry_flag += 1
-        return upgrade_success_list, upgrade_info_list
+        # TODO: 对比数据库中的 code_info 与当前 Jira 工单中的 code_info 差异部分
+        # last_code_info_list = format_code_info(last_code_info, environment, cmdb_vmc_host)
+        # current_code_info_list = format_code_info(current_code_info, environment, cmdb_vmc_host)
+        # wait_upgrade_list = compare_list_info(last_code_info_list, current_code_info_list)
+        # assert wait_upgrade_list, "数据库中 code_info 与当前 Jira 工单 code_info 数据无差异部分，不执行升级代码操作"
+
+        # 格式化升级代码数据
+        current_code_info_list = format_code_info(current_code_info, environment, cmdb_vmc_host)
+
+        # # 延迟升级，等待 harbor 镜像同步到 gcp
+        # if len(current_code_info_list) <= 3:
+        #     sleep(30)
+        # elif 3 < len(current_code_info_list) <= 6:
+        #     sleep(75)
+        # else:
+        #     sleep(90)
+
+        # 多线程方式循环待升级代码列表，调用 cmdb_obj 对象 project_deploy 方法升级代码
+        upgrade_success_number = 0
+        code_info_str_list = []
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            futures = []
+            for wait_upgrade_ins in current_code_info_list:
+                future = executor.submit(cmdb_obj.project_deploy, **wait_upgrade_ins)
+                futures.append(future)
+            # 循环升级结果列表，根据列表状态返回升级结果
+            upgrade_result_list = [future.result() for future in futures]
+            # d_logger.info(upgrade_result_list)
+            for upgrade_result in upgrade_result_list:
+                if upgrade_result["status"]:
+                    upgrade_success_number += 1
+                    code_info_str_list.append(upgrade_result["code_info_str"])
+
+        # 根据升级结果返回处理结果
+        if len(current_code_info_list) == upgrade_success_number:
+            # 保存 code_info 到 JiraIssue 表
+            code_info = "\r\n".join(code_info_str_list)
+            jira_issue_obj.code_info = code_info
+            jira_issue_obj.save()
+            d_logger.info("代码升级成功，更新 code_info 到数据库")
+            return_data["status"] = True
+            return_data["msg"] = "代码升级成功"
+        else:
+            return_data["msg"] = "代码执行失败，检查日志"
+    except AssertionError as err:
+        return_data["status"] = True
+        return_data["msg"] = err.__str__()
+    except Exception as err:
+        return_data["msg"] = f"调用 CMDB 升级代码执行异常，异常原因：{traceback.format_exc()}"
+    return return_data

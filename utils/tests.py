@@ -25,19 +25,28 @@ from pprint import pprint
 # from utils.cmdb_api import CmdbAPI
 # cmdb_config = GetYamlConfig().get_config("CMDB")
 # assert cmdb_config, f"获取 CMDB 配置信息失败，检查 config.yaml 配置文件。"
-# cmdb_host = cmdb_config.get('host')
-# cmdb_token = cmdb_config.get('token')
+# cmdb_host = cmdb_config.get("host")
+# cmdb_token = cmdb_config.get("token")
+# cmdb_vmc_host = cmdb_config.get("UAT").get("ISLOT").get("vmc_host")
 # # 创建 CMDB 对象
 # cmdb_obj = CmdbAPI(
 #     host=cmdb_host,
 #     token=cmdb_token
 # )
-# pprint(cmdb_obj.search_by_project_name(project_name="backend-islot-api-report", tag="v4"))
+# pprint(
+#     cmdb_obj.search_by_project_name(
+#         service_name="backend-islot-api-report",
+#         environment="UAT",
+#         vmc_host=cmdb_vmc_host
+#     )
+# )
 # pprint(
 #     cmdb_obj.project_deploy(
-#         project_name="backend-islot-office-api",
-#         tag="v3",
-#         code_version="eb8cd06297fa57c58b5b77e8a967fd3c0b92a752"
+#         service_name="backend-islot-api-gci",
+#         code_version="346f5638a670e06a72c22d7bbcea5a4498da8113",
+#         branch="release_uat_4",
+#         environment="UAT",
+#         vmc_host=cmdb_vmc_host
 #     )
 # )
 
@@ -56,7 +65,7 @@ from pprint import pprint
 
 
 # cicdflow_utils.py
-from cicdflow_utils import *
+# from cicdflow_utils import *
 # sql_info = "isagent_isagent-merchant@@01.is01_ddl_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c\r\nisagent_isagent-merchant@@02.is01_ddl_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c\r\nisagent_isagent-merchant@@01.is01_dml_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c"
 # pprint(format_sql_info(sql_info))
 # nacos_info = "map-test.propertles@@add@@map-testkey@@map-testvalue\r\nmap-test-2.propertles@@update@@server.dns@@1.1.1.1\r\nmap-test-2.propertles@@delete@@need_delete_key"
@@ -66,8 +75,24 @@ from cicdflow_utils import *
 #     product_id='ISLOT',
 #     environment='UAT'
 # ))
-code_info = "backend-islot-api-gci@@346f5638a670e06a72c22d7bbcea5a4498da8113@@v4\r\nbackend-islot-api-report@@a41557a52ee242000baf42ca5a6658eab5b97929@@v4"
-print(format_code_info(code_info=code_info, environment="UAT"))
+
+# python manage.py shell
+# from utils.tests import yakir_test
+# yakir_test()
+def yakir_test():
+    from utils.cicdflow_utils import thread_code_handle
+    last_code_info = None
+    current_code_info = "backend-islot-api-gci@@346f5638a670e06a72c22d7bbcea5a4498da8113@@release_uat_4\r\nbackend-islot-api-report@@a41557a52ee242000baf42ca5a6658eab5b97929@@release_uat_4"
+    # pprint(format_code_info(code_info=current_code_info, environment="UAT", vmc_host='1.1.1.1'))
+    pprint(
+        thread_code_handle(
+            last_code_info=last_code_info,
+            current_code_info=current_code_info,
+            product_id="ISLOT",
+            environment="UAT",
+            issue_key="UP-20"
+        )
+    )
 
 
 

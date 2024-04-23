@@ -23,8 +23,9 @@ class CmdbAPI:
     # 通过 project_name 查询 id，返回工程 id 用于升级
     def search_by_project_name(
             self,
-            project_name: str = None,
-            environment: str = "UAT"
+            service_name: str = None,
+            environment: str = "UAT",
+            vmc_host: str = None
     ) -> Dict[str, Union[bool, str, int]]:
         return_data = {
             "status": False,
@@ -32,31 +33,18 @@ class CmdbAPI:
             "pid": 0
         }
         try:
-            # 调整 project_name 字段为大写+下划线格式
-            upper_project_name = project_name.upper().replace("-", "_")
-
-            # 根据 env 调整 project_name 字段真实名称, UAT 或 PROD
-            if environment == "PROD":
-                real_project_name = upper_project_name
-            else:
-                real_project_name = f"{environment.upper()}_{upper_project_name}"
-
-            # 请求 CMDB 接口，获取 ID
+            # 通过 cmdb_vmc_host + service_name 调用 CMDB <升级发布>接口获取应用 ID
             data = {
                 "page": 1,
                 "size": 50,
-                "name": real_project_name
+                "service_name": service_name,
+                "vmc_host": vmc_host
             }
             cmdb_req = requests.get(url=self.search_url, json=data, headers=self._api_headers)
-
             # 根据返回状态返回结果
             if cmdb_req.status_code == 200:
                 cmdb_req_json = cmdb_req.json()
-                # fix: 工程名前缀相同时，取回完整匹配 project item info
-                project_items = cmdb_req_json['data']['items']
-                real_project_item = [p for p in project_items if p['project']['service_name'] == project_name]
-                pid = real_project_item[0]["id"]
-
+                pid = cmdb_req_json["data"]["items"][0]["id"]
                 return_data["status"] = True
                 return_data["msg"] = "查询<升级发布>工程 ID 成功"
                 return_data["pid"] = pid
@@ -69,70 +57,67 @@ class CmdbAPI:
 
     def project_deploy(
             self,
-            project_name: str = None,
-            tag: str = "v1",
+            service_name: str = None,
             code_version: str = None,
+            branch: str = "uat1",
             environment: str = "UAT",
+            vmc_host: str = ""
     ) -> Dict[str, Union[bool, str, List, Dict]]:
         """
         Args:
-            project_name: my-app
-            tag: v1 | v2 | v3 ..
+            service_name: my-app
             code_version: a1b2c3
+            branch: master | uat1 | uat2 | uat3 ..
             environment: UAT | PROD
+            vmc_host: 1.1.1.1
         Returns:
             {
                 "status": True,
                 "msg": "工程：my-app <升级发布> 成功",
                 "data": {
-                    "notice_project_name": "UAT_MY_APP_V2",
-                    "project_name": "my-app",
+                    "service_name": "my-app",
                     "code_version": None,
-                    "tag": "v2"
-                }
+                    "branch": "uat1",
+                    "environment": "UAT"
+                },
+                "code_info_str": ""
             }
         """
-        # 返回数据，兼容 v1 v2 版本的升级接口
+        # 返回数据
         return_data = {
             "status": False,
-            "msg": f"工程：{project_name} <升级发布> 失败",
+            "msg": f"工程：{service_name} <升级发布> 失败",
             "data": {
-                "project_name": project_name,
+                "service_name": service_name,
                 "code_version": code_version,
-                "tag": tag,
+                "branch": branch,
                 "environment": environment
             },
-            "notice_flags": None
+            "code_info_str": ""
         }
 
         try:
-            # 通过 project_name 获取<升级发布>工程 ID
-            project_info = self.search_by_project_name(project_name=project_name, tag=tag, environment=environment)
-            assert project_info["status"], f"工程 {project_name} 获取 CMDB <升级发布> ID 失败，失败原因：{project_info['msg']}"
-
-            # 根据 env 判断升级环境
-            if environment == "PROD":
-                real_branch = "master"
-            else:
-                real_branch = f"release_uat_{tag[-1]}"
+            # 通过 service_name + vmc_host 获取<升级发布>工程 ID
+            search_project_result = self.search_by_project_name(service_name=service_name, environment=environment, vmc_host=vmc_host)
+            assert search_project_result["status"], f"工程 {service_name} 获取 CMDB <升级发布> ID 失败，失败原因：{search_project_result['msg']}"
 
             # 调用 CMDB upgrade v2 接口升级代码
-            pid = project_info["pid"]
+            pid = search_project_result["pid"]
             url = self.upgrade_v2_url + str(pid)
             upgrade_data = {
                 "id": pid,
-                "branch": real_branch,
+                "branch": branch,
                 "version": code_version,
             }
             cmdb_req = requests.post(url=url, json=upgrade_data, headers=self._api_headers)
             # 获取升级结果返回
             if cmdb_req.status_code == 200:
-                cmdb_req_json = cmdb_req.json()
+                # cmdb_req_json = cmdb_req.json()
                 return_data["status"] = True
-                return_data["msg"] = f"工程：{project_name} <升级发布> 成功，版本：{code_version}，环境：{tag}"
-                # notice_flags = project_name
-                notice_flags = cmdb_req_json["data"].get("project", f"{project_name}")
-                return_data["notice_flags"] = notice_flags
+                return_data["msg"] = f"工程：{service_name} <升级发布> 成功，版本：{code_version}，分支：{branch}"
+                return_data["code_info_str"] = f"{service_name}@@{code_version}@@{branch}"
+            else:
+                return_data["msg"] = f"执行 CMDB <升级发布>接口返回非200状态, 返回数据 {cmdb_req.text}"
             return return_data
         except Exception as err:
             return_data["status"] = False
