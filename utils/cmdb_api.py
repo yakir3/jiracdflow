@@ -24,7 +24,6 @@ class CmdbAPI:
     def search_by_project_name(
             self,
             project_name: str = None,
-            tag: str = None,
             environment: str = "UAT"
     ) -> Dict[str, Union[bool, str, int]]:
         return_data = {

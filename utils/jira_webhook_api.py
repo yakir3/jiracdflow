@@ -43,13 +43,15 @@ class JiraEventWebhookAPI(JiraWebhookData):
             current_issue_key = current_issue_data["issue_key"]
             current_summary = current_issue_data["summary"]
             current_sql_info = current_issue_data["sql_info"]
-            # 判断是否有 SQL 升级数据：触发进入下一步流程
-            if not current_sql_info:
-                self.webhook_return_data["msg"] = f"Jira工单被创建，工单名：{current_summary}，工单无SQL升级数据，触发转换 <NoSqlUpgrade> 到状态 <CONFIG PROCESSING>"
-                jira_obj.change_transition(current_issue_key, "NoSqlUpgrade")
-            else:
-                self.webhook_return_data["msg"] = f"Jira工单被创建，工单名：{current_summary}，工单有SQL升级数据，触发转换 <TriggerSubmitSql> 到状态 <SQL PENDING>，执行提交 SQL 到 Archery 动作"
-                jira_obj.change_transition(current_issue_key, "TriggerSubmitSql")
+
+            self.webhook_return_data["msg"] = f"REVIEW PENDING 状态创建的工单 {current_summary}，忽略触发动作，等待人工审核"
+            # # 判断是否有 SQL 升级数据：触发进入下一步流程
+            # if not current_sql_info:
+            #     self.webhook_return_data["msg"] = f"Jira工单被创建，工单名：{current_summary}，工单无SQL升级数据，转换到状态 <CONFIG PROCESSING>"
+            #     jira_obj.change_transition(current_issue_key, "NoSqlUpgrade")
+            # else:
+            #     self.webhook_return_data["msg"] = f"Jira工单被创建，工单名：{current_summary}，工单有SQL升级数据，转换到状态 <SQL PENDING>"
+            #     jira_obj.change_transition(current_issue_key, "TriggerSubmitSql")
         except Exception as err:
             self.webhook_return_data["status"] = False
             self.webhook_return_data["msg"] = err.__str__()
@@ -119,7 +121,7 @@ class JiraEventWebhookAPI(JiraWebhookData):
         current_environment = current_issue_data["environment"]
 
         try:
-            pass
+            self.webhook_return_data["msg"] = "SQL PROCESSING 状态，功能待上线，忽略触发动作"
             # # 升级 SQL 主逻辑
             # start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             # d_logger.info(f"工单 {current_summary} 开始执行 SQL，开始时间：{start_time}")
@@ -171,12 +173,13 @@ class JiraEventWebhookAPI(JiraWebhookData):
         current_environment = current_issue_data["environment"]
 
         try:
-            pass
-            # # nacos_info 数据为空，直接触发到下一流程
-            # if not bool(current_nacos_info):
-            #     jira_obj.change_transition(current_issue_key, "NoConfigUpgrade")
-            #     self.webhook_return_data["msg"] = f"无配置升级，升级工单 {current_summary} 转换到状态 <CODE PROCESSING>"
-            #
+            # nacos_info 数据为空，直接触发到下一流程
+            if not bool(current_nacos_info):
+                jira_obj.change_transition(current_issue_key, "NoConfigUpgrade")
+                self.webhook_return_data["msg"] = f"无配置升级，升级工单 {current_summary} 转换到状态 <CODE PROCESSING>"
+            else:
+                self.webhook_return_data["msg"] = f"有配置升级，等待人工处理。升级工单 {current_summary} 状态不变"
+
             # # nacos_info 数据不为空，调用 nacos_handle 函数执行配置自动变更
             # nacos_res = nacos_handle(
             #     nacos_info=current_nacos_info,

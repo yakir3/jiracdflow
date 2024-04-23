@@ -397,8 +397,8 @@ def format_code_info(
     code_info_list = []
     if code_info:
         # 处理 code_info 数据，转为列表数据
-        tmp_dict = dict()
         for i in code_info.split("\r\n"):
+            tmp_dict = dict()
             tmp_info = i.split("@@")
             tmp_dict["project_name"] = tmp_info[0]
             tmp_dict["code_version"] = tmp_info[1]

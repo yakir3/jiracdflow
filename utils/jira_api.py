@@ -106,7 +106,6 @@ class JiraWebhookData(object):
             }
         except Exception as err:
             return_data["msg"] = f"Jira webhook 数据解析异常，异常原因：{err.__str__()}"
-        print(return_data)
         return return_data
 
 class JiraAPI(object):

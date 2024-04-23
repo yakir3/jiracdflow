@@ -19,7 +19,10 @@ d_logger = logging.getLogger("default_logger")
 class JiraFlowView(APIView):
     """
     webhook 触发条件:
+        # only prod
         project = UPGRADE AND issuetype = 升级 AND status in ("REVIEW PENDING", "SQL PENDING", "SQL PROCESSING","CONFIG PROCESSING", "CODE PROCESSING","FIX PENDING")
+        # all
+        project = UPGRADE AND issuetype = 升级 AND status in ("SQL PENDING", "SQL PROCESSING","CONFIG PROCESSING", "CODE PROCESSING","FIX PENDING")
     webhook 事件类型:
         jira:issue_created = issue 创建事件，初始化升级数据，开始升级流程。
         jira:issue_updated = issue 更新事件，更新升级数据，已 webhook 中数据执行对应处理逻辑。
@@ -82,8 +85,6 @@ class JiraFlowView(APIView):
             issue_key = webhook_data.get("issue_key")
             issue_status = webhook_data.get("issue_status")
             summary = webhook_data.get("summary")
-            d_logger.info(webhook_data)
-            d_logger.info(webhook_event)
 
             # 暂时不处理运营环境 webhook
             if webhook_environment == "PROD":
@@ -97,7 +98,7 @@ class JiraFlowView(APIView):
                 jira_issue_ser_data = dict(jira_issue_ser.validated_data)
                 # Jira 工单数据存入数据库
                 jira_issue_ser.save()
-                d_logger.info("新建 Jira 工单成功，写入工单数据到数据库中。")
+                d_logger.info(f"新建 Jira 工单{summary}成功，写入工单数据到数据库中。")
                 webhook_result = jira_event_webhook_obj.created_event_action(
                     current_issue_data=jira_issue_ser_data,
                 )
