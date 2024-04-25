@@ -1,17 +1,21 @@
 import requests
 from urllib.parse import quote
+from utils.getconfig import GetYamlConfig
 
-
-# git仓库的项目名与项目ID的映射关系
-git_project_name_id_map = {
-    "isagent_isagent-admin": 316,
-    "isagent_isagent-merchant": 317,
-    "isagent_isagent-report": 318,
-    "isagent_ipachinko-merchant": 319,
-    "isagent_bw01-cashsite": 321,
-    "islot_islot-main": 328,
-    "islot_islot-v2": 329
-}
+# 获取 Archery  配置信息
+gitlab_config = GetYamlConfig().get_config("Gitlab")
+assert gitlab_config, "获取 Gitlab 配置信息失败，检查 config.yaml 配置文件。"
+git_project_name_id_map = gitlab_config.get("sql_repo_map")
+# # git仓库的项目名与项目ID的映射关系
+# git_project_name_id_map = {
+#     "isagent_isagent-admin": 316,
+#     "isagent_isagent-merchant": 317,
+#     "isagent_isagent-report": 318,
+#     "isagent_ipachinko-merchant": 319,
+#     "isagent_bw01-cashsite": 321,
+#     "islot_islot-main": 328,
+#     "islot_islot-v2": 329
+# }
 
 def get_sql_content(server_address=None, private_token=None, repo_name=None, file_name=None, commit_sha=None):
     """

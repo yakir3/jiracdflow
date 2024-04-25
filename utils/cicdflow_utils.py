@@ -9,7 +9,7 @@ import re
 from utils.archery_api import ArcheryAPI
 from utils.cmdb_api import CmdbAPI
 from utils.getconfig import GetYamlConfig
-from utils.git_utils import get_sql_content as get_sql_content_from_gitlab
+from utils.gitlab_api import get_sql_content as get_sql_content_from_gitlab
 from utils.nacos_client import NacosClient
 from utils.pgsql_api import PostgresClient
 from utils.email_client import EmailClient
@@ -64,11 +64,12 @@ def sql_submit_handle(
 
         # 获取 Archery  配置信息
         archery_config = GetYamlConfig().get_config("Archery")
-        assert archery_config, "获取 Archery 或 Gitlab 配置信息失败，检查 config.yaml 配置文件。"
+        assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
         archery_username = archery_config.get("username")
         archery_password = archery_config.get("password")
         # 获取 Gitlab 配置信息
         gitlab_config = GetYamlConfig().get_config('Gitlab')
+        assert gitlab_config, "获取 Gitlab 配置信息失败，检查 config.yaml 配置文件。"
         gitlab_host = gitlab_config.get("host")
         gitlab_token = gitlab_config.get("private_token")
 
@@ -394,7 +395,6 @@ def nacos_handle(
 def format_code_info(
         code_info: str = None,
         environment: str = "UAT",
-        vmc_host: str = None
 ) -> List:
     code_info_list = []
     if code_info:
@@ -406,7 +406,6 @@ def format_code_info(
             tmp_dict["code_version"] = tmp_info[1]
             tmp_dict["branch"] = tmp_info[2]
             tmp_dict["environment"] = environment
-            tmp_dict["vmc_host"] = vmc_host
             code_info_list.append(tmp_dict)
     return code_info_list
 
@@ -448,11 +447,13 @@ def completed_workflow_notice(
 
 # 多线程方式升级代码
 def thread_code_handle(
-        last_code_info: str = None,
+        last_code_init_flag: int = None,
         current_code_info: str = None,
         product_id: str = None,
         environment: str = None,
-        issue_key: str = None
+        issue_key: str = None,
+        last_code_info_list: List = None,
+        wait_upgrade_list: List = None
     ) -> Dict:
     return_data = {
         "status": False,
@@ -480,53 +481,48 @@ def thread_code_handle(
             issue_key=issue_key
         )
 
-        # TODO: 对比数据库中的 code_info 与当前 Jira 工单中的 code_info 差异部分
-        # last_code_info_list = format_code_info(last_code_info, environment, cmdb_vmc_host)
-        # current_code_info_list = format_code_info(current_code_info, environment, cmdb_vmc_host)
-        # wait_upgrade_list = compare_list_info(last_code_info_list, current_code_info_list)
-        # assert wait_upgrade_list, "数据库中 code_info 与当前 Jira 工单 code_info 数据无差异部分，不执行升级代码操作"
+        # 延迟升级，等待 harbor 镜像同步到 gcp
+        if len(wait_upgrade_list) <= 3:
+            sleep(30)
+        elif 3 < len(wait_upgrade_list) <= 6:
+            sleep(75)
+        else:
+            sleep(90)
 
-        # 格式化升级代码数据
-        current_code_info_list = format_code_info(current_code_info, environment, cmdb_vmc_host)
-
-        # # 延迟升级，等待 harbor 镜像同步到 gcp
-        # if len(current_code_info_list) <= 3:
-        #     sleep(30)
-        # elif 3 < len(current_code_info_list) <= 6:
-        #     sleep(75)
-        # else:
-        #     sleep(90)
-
-        # 多线程方式循环待升级代码列表，调用 cmdb_obj 对象 project_deploy 方法升级代码
+        # 多线程方式循环待升级代码
+        # 记录升级成功的服务数量: 1. 全部成功用当前表单 code_info 数据保存数据库 2. 升级失败时只保存升级成功的部分到数据库，用于下次差异升级
         upgrade_success_number = 0
-        code_info_str_list = []
+        last_code_info_list = last_code_info_list
         with ThreadPoolExecutor(max_workers=12) as executor:
             futures = []
-            for wait_upgrade_ins in current_code_info_list:
+            for wait_upgrade_ins in wait_upgrade_list:
+                # 添加 vmc_host 参数调用 project_deploy 方法
+                wait_upgrade_ins["vmc_host"] = cmdb_vmc_host
                 future = executor.submit(cmdb_obj.project_deploy, **wait_upgrade_ins)
                 futures.append(future)
-            # 循环升级结果列表，根据列表状态返回升级结果
+            # cmdb_obj 对象 project_deploy 方法返回，根据返回状态进行处理
             upgrade_result_list = [future.result() for future in futures]
             # d_logger.info(upgrade_result_list)
             for upgrade_result in upgrade_result_list:
                 if upgrade_result["status"]:
                     upgrade_success_number += 1
-                    code_info_str_list.append(upgrade_result["code_info_str"])
+                    last_code_info_list.append(upgrade_result["data"])
 
         # 根据升级结果返回处理结果
-        if len(current_code_info_list) == upgrade_success_number:
-            # 保存 code_info 到 JiraIssue 表
-            code_info = "\r\n".join(code_info_str_list)
-            jira_issue_obj.code_info = code_info
+        if len(wait_upgrade_list) == upgrade_success_number:
+            jira_issue_obj.issue_status = "UPGRADED DONE"
+            jira_issue_obj.code_info = current_code_info
+            jira_issue_obj.init_flag["code_init_flag"] = last_code_init_flag + 1
             jira_issue_obj.save()
-            d_logger.info("代码升级成功，更新 code_info 到数据库")
             return_data["status"] = True
             return_data["msg"] = "代码升级成功"
+            d_logger.info("代码升级成功，更新 code_info 到数据库")
         else:
-            return_data["msg"] = "代码执行失败，检查日志"
-    except AssertionError as err:
-        return_data["status"] = True
-        return_data["msg"] = err.__str__()
+            d_logger.info(last_code_info_list)
+            jira_issue_obj.code_info = "\r\n".join(last_code_info_list)
+            jira_issue_obj.save()
+            return_data["msg"] = "代码升级失败，检查日志"
+            d_logger.info("代码升级失败，只更新成功的数据到数据库")
     except Exception as err:
         return_data["msg"] = f"调用 CMDB 升级代码执行异常，异常原因：{traceback.format_exc()}"
     return return_data

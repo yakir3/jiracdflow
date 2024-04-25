@@ -33,40 +33,63 @@ class JiraFlowView(APIView):
     """
     @swagger_auto_schema(
         operation_summary="Jira Webhook API",
-        operation_description="接收 Jira webhook 请求，根据状态做对应处理",
+        operation_description="处理 Jira webhook 请求，根据状态做对应流程处理",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            properties={}
+            properties={
+                "issue": openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    description="Jira Issue 信息",
+                    properties={
+                        "fields": openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            description="Issue 所有字段内容",
+                            properties={
+                                "summary": openapi.Schema(type=openapi.TYPE_STRING, description="Issue 标题"),
+                                "status": openapi.Schema(type=openapi.TYPE_STRING, description="Issue 状态信息"),
+                                "environment": openapi.Schema(type=openapi.TYPE_STRING, description="升级环境"),
+                                "customfield_11113": openapi.Schema(type=openapi.TYPE_STRING, description="项目名称"),
+                                "customfield_11100": openapi.Schema(type=openapi.TYPE_STRING, description="功能列表"),
+                                "customfield_11104": openapi.Schema(type=openapi.TYPE_STRING, description="升级类型"),
+                                "customfield_11106": openapi.Schema(type=openapi.TYPE_STRING, description="升级是否维护"),
+                                "customfield_11108": openapi.Schema(type=openapi.TYPE_STRING, description="SQL 升级内容"),
+                                "customfield_11109": openapi.Schema(type=openapi.TYPE_STRING, description="Nacos 升级内容"),
+                                "customfield_11110": openapi.Schema(type=openapi.TYPE_STRING, description="Config 升级内容"),
+                                "customfield_11112": openapi.Schema(type=openapi.TYPE_STRING, description="Code 升级内容")
+                            }
+                        ),
+                        "id": openapi.Schema(type=openapi.TYPE_STRING, description="issue_id"),
+                        "key": openapi.Schema(type=openapi.TYPE_STRING, description="issue_key"),
+                        "self": openapi.Schema(type=openapi.TYPE_STRING, description="Issue URL")
+                    }
+                ),
+                "issue_event_type_name": openapi.Schema(type=openapi.TYPE_STRING, description="Issue 事件类型名称"),
+                "timestamp": openapi.Schema(type=openapi.TYPE_INTEGER, description="时间戳"),
+                "user": openapi.Schema(type=openapi.TYPE_OBJECT, description="用户信息"),
+                "webhookEvent": openapi.Schema(type=openapi.TYPE_STRING, description="Jira issue event 类型")
+            }
         ),
         responses={
             200: openapi.Schema(
                 type=openapi.TYPE_OBJECT,
                 properties={
-                    "status": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    "status": openapi.Schema(type=openapi.TYPE_BOOLEAN, description="返回处理结果"),
                     "msg": openapi.Schema(type=openapi.TYPE_STRING, description="返回消息"),
                     "data": openapi.Schema(
                         type=openapi.TYPE_OBJECT,
-                        properties={},
-                        description="返回数据"),
-                }
-            ),
-            500: openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                properties={
-                    "status": openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                    "msg": openapi.Schema(type=openapi.TYPE_STRING, description="返回消息"),
-                    "data": openapi.Schema(
-                        type=openapi.TYPE_OBJECT,
-                        properties={},
-                        description="返回数据"),
+                        description="返回数据",
+                        properties={}
+                    )
                 }
             )
         }
     )
-    def post(self,
-             request,
-             *args: Any,
-             **kwargs: Any) -> Response:
+    def post(
+            self,
+            request,
+            *args: Any,
+            **kwargs: Any
+    ) -> Response:
         return_data = {
             "status": False,
             "msg": "",
@@ -104,7 +127,6 @@ class JiraFlowView(APIView):
             # webhook 事件为 updated 时，根据当前 issue 状态执行对应函数逻辑
             elif webhook_event == "jira:issue_updated":
                 # 获取之前 JiraIssue 表中的工单数据，获取前先确保数据库中存在 issue 数据
-                assert JiraIssue.objects.filter(issue_key=issue_key), "当前 Jira Issue 不存在数据库中，中止继续执行"
                 last_issue_obj = JiraIssue.objects.get(issue_key=issue_key)
 
                 # 根据 JiraIssue 序列化器序列化当前 Jira webhook 数据
@@ -112,7 +134,7 @@ class JiraFlowView(APIView):
                 jira_issue_ser.is_valid(raise_exception=True)
                 jira_issue_ser_data = dict(jira_issue_ser.validated_data)
 
-                # 判断当前 issue 状态，根据状态获取数据进行变更。每次转换状态前更新当前 issue DB 数据
+                # 判断当前 issue 状态，根据状态获取数据进行变更。每次转换状态前更新当前 issue_obj issue_status 字段
                 match issue_status:
                     # SQL PENDING 状态
                     case "SQL PENDING":
@@ -144,8 +166,11 @@ class JiraFlowView(APIView):
                             last_issue_obj=last_issue_obj
                         )
                     case _:
-                        msg = f"工单：{summary} 当前 issue 状态为 <{issue_status}>，无需操作触发下一步流程，忽略状态转换"
-                        webhook_result = {"status": True, "msg": msg}
+                        webhook_result = {
+                            "status": True,
+                            "msg": f"工单：{summary} 当前 issue 状态为 <{issue_status}>，无需操作触发下一步流程，忽略状态转换",
+                            "data": dict()
+                        }
             else:
                 raise KeyError("jira webhook event 事件不为 created 或 updated，请检查 webhook event 类型")
 
@@ -157,16 +182,20 @@ class JiraFlowView(APIView):
                 return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             # webhook 正常触发，记录返回日志
-            return_data["status"] = True
-            return_data["msg"] = f"Jira 状态 {issue_status} webhook 触发成功."
-            return_data["data"] = webhook_result
+            return_data["status"] = webhook_result["status"]
+            return_data["msg"] = f"Jira 状态 <{issue_status}> webhook 触发成功。调用 jira_webhook_api 返回原始消息 --> {webhook_result['msg']}"
+            return_data["data"] = webhook_result["data"]
             d_logger.info(return_data)
             return Response(data=return_data, status=status.HTTP_200_OK)
+        except JiraIssue.DoesNotExist as err:
+            return_data["msg"] = f"Jira webhook 触发失败，当前工单 {summary} 不存在数据库中，中止继续执行"
+            d_logger.error(return_data)
+            return Response(data=return_data, status=status.HTTP_404_NOT_FOUND)
         except KeyError as err:
-            return_data["msg"] = f"webhook 触发失败，issue 非 created 或 updated 操作，异常原因：{err.__str__()}"
+            return_data["msg"] = f"Jira webhook 触发失败，issue 非 created 或 updated 操作，异常原因：{err.__str__()}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception:
-            return_data["msg"] = f"webhook 触发失败，异常原因：{traceback.format_exc()}"
+            return_data["msg"] = f"Jira webhook 触发失败，异常原因：{traceback.format_exc()}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

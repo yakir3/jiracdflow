@@ -27,7 +27,7 @@ from pprint import pprint
 # assert cmdb_config, f"获取 CMDB 配置信息失败，检查 config.yaml 配置文件。"
 # cmdb_host = cmdb_config.get("host")
 # cmdb_token = cmdb_config.get("token")
-# cmdb_vmc_host = cmdb_config.get("UAT").get("ISLOT").get("vmc_host")
+# cmdb_vmc_host = cmdb_config.get("UAT").get("ISLOT-AGENT").get("vmc_host")
 # # 创建 CMDB 对象
 # cmdb_obj = CmdbAPI(
 #     host=cmdb_host,
@@ -35,7 +35,7 @@ from pprint import pprint
 # )
 # pprint(
 #     cmdb_obj.search_by_project_name(
-#         service_name="backend-islot-api-report",
+#         service_name="frontend-isagent-web",
 #         environment="UAT",
 #         vmc_host=cmdb_vmc_host
 #     )
@@ -80,19 +80,23 @@ from pprint import pprint
 # from utils.tests import yakir_test
 # yakir_test()
 def yakir_test():
-    from utils.cicdflow_utils import thread_code_handle
+    from utils.cicdflow_utils import format_code_info, compare_list_info, thread_code_handle
     last_code_info = None
     current_code_info = "backend-islot-api-gci@@346f5638a670e06a72c22d7bbcea5a4498da8113@@release_uat_4\r\nbackend-islot-api-report@@a41557a52ee242000baf42ca5a6658eab5b97929@@release_uat_4"
-    # pprint(format_code_info(code_info=current_code_info, environment="UAT", vmc_host='1.1.1.1'))
-    pprint(
-        thread_code_handle(
-            last_code_info=last_code_info,
-            current_code_info=current_code_info,
-            product_id="ISLOT",
-            environment="UAT",
-            issue_key="UP-20"
-        )
-    )
+    last_code_info_list = format_code_info(code_info=last_code_info, environment="UAT")
+    current_code_info_list = format_code_info(code_info=current_code_info, environment="UAT")
+    print(last_code_info_list, current_code_info_list)
+    print(compare_list_info(last_code_info_list, current_code_info_list))
+    # pprint(
+    #     thread_code_handle(
+    #         last_code_info=last_code_info,
+    #         current_code_info=current_code_info,
+    #         product_id="ISLOT",
+    #         environment="UAT",
+    #         issue_key="UP-20"
+    #     )
+    # )
+yakir_test()
 
 
 

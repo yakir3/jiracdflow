@@ -1,7 +1,4 @@
-import json
 import requests
-from ast import literal_eval
-from utils.getconfig import GetYamlConfig
 from typing import Dict, List, Union, Any, Tuple
 
 __all__ = ["CmdbAPI"]
@@ -33,7 +30,7 @@ class CmdbAPI:
             "pid": 0
         }
         try:
-            # 通过 cmdb_vmc_host + service_name 调用 CMDB <升级发布>接口获取应用 ID
+            # 通过 cmdb_vmc_host + service_name 调用 CMDB <升级发布> 接口获取对应 environment 的服务信息
             data = {
                 "page": 1,
                 "size": 50,
@@ -44,7 +41,11 @@ class CmdbAPI:
             # 根据返回状态返回结果
             if cmdb_req.status_code == 200:
                 cmdb_req_json = cmdb_req.json()
-                pid = cmdb_req_json["data"]["items"][0]["id"]
+                # fix: 返回多个 item 时，使用 service_name 过滤唯一值
+                project_items = cmdb_req_json["data"]["items"]
+                real_project_item = [p for p in project_items if p["project"]["service_name"] == service_name]
+                pid = real_project_item[0]["id"]
+
                 return_data["status"] = True
                 return_data["msg"] = "查询<升级发布>工程 ID 成功"
                 return_data["pid"] = pid
@@ -79,8 +80,7 @@ class CmdbAPI:
                     "code_version": None,
                     "branch": "uat1",
                     "environment": "UAT"
-                },
-                "code_info_str": ""
+                }
             }
         """
         # 返回数据
@@ -92,10 +92,8 @@ class CmdbAPI:
                 "code_version": code_version,
                 "branch": branch,
                 "environment": environment
-            },
-            "code_info_str": ""
+            }
         }
-
         try:
             # 通过 service_name + vmc_host 获取<升级发布>工程 ID
             search_project_result = self.search_by_project_name(service_name=service_name, environment=environment, vmc_host=vmc_host)
@@ -115,13 +113,12 @@ class CmdbAPI:
                 # cmdb_req_json = cmdb_req.json()
                 return_data["status"] = True
                 return_data["msg"] = f"工程：{service_name} <升级发布> 成功，版本：{code_version}，分支：{branch}"
-                return_data["code_info_str"] = f"{service_name}@@{code_version}@@{branch}"
             else:
                 return_data["msg"] = f"执行 CMDB <升级发布>接口返回非200状态, 返回数据 {cmdb_req.text}"
             return return_data
         except Exception as err:
             return_data["status"] = False
-            return_data["msg"] = f"调用 CMDB <升级发布> 异常，异常原因：{err.__str__()}"
+            return_data["msg"] = f"调用 CMDB <升级发布> 异常，异常原因：{err}"
         return return_data
 
 if __name__ == "__main__":
