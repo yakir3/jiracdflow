@@ -1,17 +1,17 @@
-from typing import Dict, List, Union, Any, Tuple
+from typing import Dict, List, Union
 from concurrent.futures import ThreadPoolExecutor
 # from collections import defaultdict, UserDict
 from django.db.models import Q
 from time import sleep
 import traceback
-import re
+# import re
 
 from utils.archery_api import ArcheryAPI
 from utils.cmdb_api import CmdbAPI
 from utils.getconfig import GetYamlConfig
 from utils.gitlab_api import get_sql_content as get_sql_content_from_gitlab
 from utils.nacos_client import NacosClient
-from utils.pgsql_api import PostgresClient
+# from utils.pgsql_api import PostgresClient
 from utils.email_client import EmailClient
 email_obj = EmailClient()
 import logging
@@ -49,8 +49,8 @@ def format_sql_info(
 
 # 提交 SQL 到 Archery 处理函数
 def sql_submit_handle(
+        sql_info_list: List = None,
         workflow_name: str = "",
-        sql_info: str = None,
         environment: str = "UAT",
 ) -> Dict:
     return_data = {
@@ -59,14 +59,12 @@ def sql_submit_handle(
         "data": dict()
     }
     try:
-        # 格式化 sql_info 数据
-        sql_info_list = format_sql_info(sql_info)
-
         # 获取 Archery  配置信息
         archery_config = GetYamlConfig().get_config("Archery")
         assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
         archery_username = archery_config.get("username")
         archery_password = archery_config.get("password")
+
         # 获取 Gitlab 配置信息
         gitlab_config = GetYamlConfig().get_config('Gitlab')
         assert gitlab_config, "获取 Gitlab 配置信息失败，检查 config.yaml 配置文件。"
@@ -82,7 +80,7 @@ def sql_submit_handle(
             real_sql_info_list = [item for item in sql_info_list if "ONLYPROD" not in item["file_name"]]
         archery_host = archery_config.get("uat_host")
 
-        # 创建 Archery 对象，调用 commit_workflow 方法提交 SQL
+        # 创建 Archery 对象
         archery_obj = ArcheryAPI(
             host=archery_host,
             username=archery_username,
@@ -93,7 +91,6 @@ def sql_submit_handle(
         from cicdflow.models import SqlWorkflow
         from cicdflow.serializers import SqlWorkflowSerializer
         sqlworkflow_obj = SqlWorkflow()
-        sqlworkflow_ser_obj = SqlWorkflowSerializer()
 
         # 开始提交处理逻辑
         submit_success_number = 0
@@ -102,8 +99,10 @@ def sql_submit_handle(
             repo_name = sql_data.get("repo_name")
             file_name = sql_data("file_name")
             commit_sha = sql_data("commit_sha")
-            sql_resource_name = repo_name.split("_")[0].upper()
-            sql_instance_name = repo_name.split("_")[1]
+            # Archery 资源组名称
+            archery_resource_name = repo_name.split("_")[0]
+            # Archery 实例名称
+            archery_instance_name = repo_name.split("_")[1]
 
             # 查询 SqlWorkflow 表是否已存在 SQL 文件，不存在则提交，存在则跳过
             existed_flag = sqlworkflow_obj.objects.filter(
@@ -120,6 +119,7 @@ def sql_submit_handle(
             # 获取提交 Archery SQL 工单数据
             commit_data = {
                 "sql_index": sql_index,
+                "sql_file_name": file_name,
                 'sql_release_info': commit_sha,
                 "sql_content": get_sql_content_from_gitlab(
                     server_address=gitlab_host,
@@ -129,15 +129,14 @@ def sql_submit_handle(
                     commit_sha=commit_sha
                 ),
                 "workflow_name": workflow_name,
-                "resource_tag": sql_resource_name,
-                "instance_tag": sql_instance_name,
+                "resource_name": archery_resource_name,
+                "instance_name": archery_instance_name,
             }
             # 提交 Archery SQL 工单，提交成功保存入 SqlWorkflow 表
             commit_result = archery_obj.commit_workflow(**commit_data)
             if commit_result["status"]:
                 submit_success_number += 1
-                commit_result['data']['sql_filename'] = file_name
-                sqlworkflow_ser = sqlworkflow_ser_obj(data=commit_result['data'])
+                sqlworkflow_ser = SqlWorkflowSerializer(data=commit_result['data'])
                 sqlworkflow_ser.is_valid(raise_exception=True)
                 sqlworkflow_ser.save()
                 d_logger.info(f"工单：{workflow_name} SQL：{file_name} 提交成功，提交版本：{commit_sha}")
@@ -217,7 +216,7 @@ def sql_upgrade_handle(
             # 查询 Archery 上当前状态，根据状态对应处理
             select_result = archery_obj.get_workflows(w_id=w_id)
             assert select_result["status"], "查询 Archery 工单状态失败，检查日志"
-            select_workflow_status = select_result['data'][0]["status"]
+            select_workflow_status = select_result["data"][0]["status"]
 
             # workflow_manreviewing：执行自动审核
             if select_workflow_status == "workflow_manreviewing":
@@ -269,40 +268,40 @@ def sql_upgrade_handle(
     return return_data
 
 # 根据 sql 语句生成备份工单数据
-def get_backup_commit_data(
-        sql_instance_name: str,
-        sql_content_value: str
-) -> Union[None, str]:
-    try:
-        # 解析原始的 dml sql，如果存在 delete update 语句则获取 delete update 语句
-        sql_list = re.split(r";\s*$", sql_content_value, flags=re.MULTILINE)
-        dml_sql_list = [sql.strip() for sql in sql_list if "delete " in sql.lower() or "update " in sql.lower()]
-        if not dml_sql_list:
-            return None
-
-        # 从 sql 内容获取表名等信息，组装为备份 sql 语句
-        bk_sql_content_value = ""
-        bk_table_flag = []
-        for sql in dml_sql_list:
-            r_matches = re.search(r"(?:delete\sfrom|update)\s(\w+).*(where .*)", sql, flags=re.IGNORECASE|re.DOTALL)
-            if not r_matches:
-                continue
-            # 初始化 pg 类，获取是否存在备份表
-            pg_obj = PostgresClient(sql_instance_name)
-            # 获取备份表名，同一工单同个表多个备份
-            bk_table_name_list = pg_obj.select_bk_table(table_name=r_matches.group(1))
-            if not bk_table_flag:
-                bk_table_flag = bk_table_name_list
-                bk_table_name = "bk" + "_".join(bk_table_name_list)
-            else:
-                bk_table_flag[2] = str(int(bk_table_flag[2]) + 1)
-                bk_table_name = "bk" + "_".join(bk_table_flag)
-            bk_sql_content = f"create table {bk_table_name} as select * from {r_matches.group(1)} {r_matches.group(2)};"
-            bk_sql_content_value += f"{bk_sql_content}\n"
-        return bk_sql_content_value
-    except Exception as err:
-        d_logger.error(err.__str__())
-        return None
+# def get_backup_commit_data(
+#         sql_instance_name: str,
+#         sql_content_value: str
+# ) -> Union[None, str]:
+#     try:
+#         # 解析原始的 dml sql，如果存在 delete update 语句则获取 delete update 语句
+#         sql_list = re.split(r";\s*$", sql_content_value, flags=re.MULTILINE)
+#         dml_sql_list = [sql.strip() for sql in sql_list if "delete " in sql.lower() or "update " in sql.lower()]
+#         if not dml_sql_list:
+#             return None
+#
+#         # 从 sql 内容获取表名等信息，组装为备份 sql 语句
+#         bk_sql_content_value = ""
+#         bk_table_flag = []
+#         for sql in dml_sql_list:
+#             r_matches = re.search(r"(?:delete\sfrom|update)\s(\w+).*(where .*)", sql, flags=re.IGNORECASE|re.DOTALL)
+#             if not r_matches:
+#                 continue
+#             # 初始化 pg 类，获取是否存在备份表
+#             pg_obj = PostgresClient(sql_instance_name)
+#             # 获取备份表名，同一工单同个表多个备份
+#             bk_table_name_list = pg_obj.select_bk_table(table_name=r_matches.group(1))
+#             if not bk_table_flag:
+#                 bk_table_flag = bk_table_name_list
+#                 bk_table_name = "bk" + "_".join(bk_table_name_list)
+#             else:
+#                 bk_table_flag[2] = str(int(bk_table_flag[2]) + 1)
+#                 bk_table_name = "bk" + "_".join(bk_table_flag)
+#             bk_sql_content = f"create table {bk_table_name} as select * from {r_matches.group(1)} {r_matches.group(2)};"
+#             bk_sql_content_value += f"{bk_sql_content}\n"
+#         return bk_sql_content_value
+#     except Exception as err:
+#         d_logger.error(err.__str__())
+#         return None
 
 # 格式化 nacos 数据
 def format_nacos_info(
@@ -326,7 +325,7 @@ def format_nacos_info(
     return nacos_info_dict
 
 def nacos_handle(
-        nacos_info: str = None,
+        nacos_info_dict: Dict = None,
         product_id: str = None,
         environment: str = None
 ):
@@ -348,45 +347,42 @@ def nacos_handle(
         namespace = nacos_config.get("test_namespace")
         group = "DEFAULT_GROUP"
 
-        # 转换 nacos_info 数据
-        nacos_keys = format_nacos_info(nacos_info)
-
-        # 创建客户端
+        # 创建 Nacos 客户端对象
         nacos_client = NacosClient(nacos_config)
 
         # 校验操作，校验不通过直接抛异常，不执行变更
-        for data_id, keys in nacos_keys.items():
-            # 从nacos获取配置
+        for data_id, keys in nacos_info_dict.items():
+            # 从 nacos 获取配置
             confit_text = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
-            # 把从nacos获取到的配置 由文本 转换为 dict类型
+            # 把从 nacos 获取到的配置 由文本 转换为 dict 类型
             config_dict = nacos_client.convert_text_to_dict(confit_text)
-            # 检查要操作的key与对的action是否合规(有该key才可以删除和修改，无该key才可以新增)
+            # 检查要操作的 key 与对的 action 是否合规(有该key才可以删除和修改，无该key才可以新增)
             check_keys_message = nacos_client.check_all_keys(config_dict, keys)
             if check_keys_message:
                 # for key, message in check_keys_message.items():
                 #     d_logger.info(data_id, key, message)
-                raise KeyError("Nacos 配置文件 keys 校验不通过，不进行变更动作，检查配置信息。")
+                raise KeyError("Nacos 配置文件 keys 校验不通过，不进行变更动作，检查本次升级配置变更内容")
             else:
                 pass
         d_logger.info("Nacos 配置文件 keys 全部校验通过")
 
-        # # 校验通过，开始实际变更操作
-        # for data_id, keys in nacos_keys.items():
-        #     # 从nacos获取配置
-        #     confit_text = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
-        #     # 把从nacos获取到的配置 由文本 转换为 dict类型
-        #     config_dict = nacos_client.convert_text_to_dict(confit_text)
-        #     d_logger.info(f"记录变更前 nacos 配置信息, data_id：{data_id}, 配置内容：{config_dict}")
-        #     new_config = nacos_client.update_config(config_dict, keys)
-        #     content = nacos_client.convert_dict_to_text(new_config)
-        #     message = nacos_client.post_config(namespace=namespace, group=group, data_id=data_id, content=content)
-        #     d_logger.info(f"变更 nacos 配置返回信息：{message}")
+        # 校验通过，开始实际变更操作
+        for data_id, keys in nacos_info_dict.items():
+            # 从 nacos 获取配置
+            confit_text = nacos_client.get_config(namespace=namespace, group=group, data_id=data_id)
+            # 把从 nacos 获取到的配置由文本转换为 dict 类型
+            config_dict = nacos_client.convert_text_to_dict(confit_text)
+            d_logger.info(f"记录变更前 nacos 配置内容, data_id：{data_id}, 配置内容：{config_dict}")
+            new_config = nacos_client.update_config(config_dict, keys)
+            content = nacos_client.convert_dict_to_text(new_config)
+            message = nacos_client.post_config(namespace=namespace, group=group, data_id=data_id, content=content)
+            d_logger.info(f"变更后 nacos 配置返回内容：{message}")
 
         # Nacos 变更全部执行成功，返回 True
         return_data["status"] = True
         return_data["msg"] = f"产品 {product_id} Nacos 变更配置成功。"
     except KeyError as err:
-        return_data["msg"] = traceback.format_exc()
+        return_data["msg"] = err.args[0]
     except Exception as err:
         return_data["msg"] = f"产品 {product_id} Nacos 变更配置执行异常，异常原因：{traceback.format_exc()}"
     return return_data

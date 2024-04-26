@@ -100,16 +100,13 @@ class JiraFlowView(APIView):
             jira_event_webhook_obj = JiraEventWebhookAPI(request.data)
 
             # 获取 JiraEventWebhookAPI 序列化对象中的数据
-            webhook_environment = jira_event_webhook_obj.webhook_environment
+            if jira_event_webhook_obj.webhook_environment == 'PROD':
+                raise Exception('运营环境工单跳过，不处理 webhook 请求')
             webhook_event = jira_event_webhook_obj.webhook_event
             webhook_data = jira_event_webhook_obj.webhook_data
             issue_key = webhook_data.get("issue_key")
             issue_status = webhook_data.get("issue_status")
             summary = webhook_data.get("summary")
-
-            # 暂时不处理运营环境 webhook
-            if webhook_environment == "PROD":
-                raise Exception("运营环境跳过，不处理 webhook!!!!!!!!")
 
             # webhook 事件为 created 时，写入工单数据到数据库，开始完整升级流程
             if webhook_event == "jira:issue_created":
@@ -172,27 +169,27 @@ class JiraFlowView(APIView):
                             "data": dict()
                         }
             else:
-                raise KeyError("jira webhook event 事件不为 created 或 updated，请检查 webhook event 类型")
+                raise KeyError("webhook event 事件不为 jira:issue_created 或 jira:issue_updated")
 
             # webhook 处理结果非 true 时，返回错误信息
             if not webhook_result["status"]:
-                return_data["msg"] = f"webhook 触发成功，执行触发状态逻辑返回错误."
-                return_data["data"] = webhook_result
+                return_data["msg"] = f"Jira 状态 <{issue_status}> webhook 调用 jira_webhook_api 失败，返回消息 --> {webhook_result['msg']}"
+                return_data["data"] = webhook_result["data"]
                 d_logger.error(return_data)
                 return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             # webhook 正常触发，记录返回日志
-            return_data["status"] = webhook_result["status"]
+            return_data["status"] = True
             return_data["msg"] = f"Jira 状态 <{issue_status}> webhook 触发成功。调用 jira_webhook_api 返回原始消息 --> {webhook_result['msg']}"
             return_data["data"] = webhook_result["data"]
             d_logger.info(return_data)
             return Response(data=return_data, status=status.HTTP_200_OK)
         except JiraIssue.DoesNotExist as err:
-            return_data["msg"] = f"Jira webhook 触发失败，当前工单 {summary} 不存在数据库中，中止继续执行"
+            return_data["msg"] = f"Jira webhook 触发失败，当前工单不存在数据库中。异常原因：{err}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_404_NOT_FOUND)
         except KeyError as err:
-            return_data["msg"] = f"Jira webhook 触发失败，issue 非 created 或 updated 操作，异常原因：{err.__str__()}"
+            return_data["msg"] = f"Jira webhook 触发失败，异常原因：{err}"
             d_logger.error(return_data)
             return Response(data=return_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception:

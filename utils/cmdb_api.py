@@ -63,7 +63,7 @@ class CmdbAPI:
             branch: str = "uat1",
             environment: str = "UAT",
             vmc_host: str = ""
-    ) -> Dict[str, Union[bool, str, List, Dict]]:
+    ) -> Dict[str, Union[bool, str, Dict]]:
         """
         Args:
             service_name: my-app

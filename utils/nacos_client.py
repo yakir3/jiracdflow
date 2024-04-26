@@ -36,6 +36,7 @@ class NacosClient:
     def post_config(self, namespace=None, group=None, data_id=None, content=None):
         """
             content: type: str,  配置文件文本内容
+            type: str ,固定使用 properties
         """
         url = f"{self.server_address}/v2/cs/config"
         post_data = {
@@ -43,7 +44,8 @@ class NacosClient:
             "group": group,
             "dataId": data_id,
             "accessToken": self.token,
-            "content": content
+            "content": content,
+            "type": "properties"
         }
         response = requests.post(url, data=post_data)
         data = response.json()

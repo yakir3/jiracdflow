@@ -73,7 +73,7 @@ class JiraWebhookData(object):
         # webhookEvent 字段数据
         self.webhook_event = self.request_data.get("webhookEvent")
 
-    def get_custom_issue_data(self) -> Dict[str, Union[bool, str]]:
+    def get_custom_issue_data(self) -> Dict[str, Union[bool, str, Dict]]:
         return_data = {
             "status": False,
             "msg": "",

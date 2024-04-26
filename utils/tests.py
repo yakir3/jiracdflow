@@ -6,18 +6,21 @@ from pprint import pprint
 
 
 # Archery
-# from utils.archery_api import ArcheryAPI
-# archery_config = GetYamlConfig().get_config("Archery")
-# assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
-# archery_host = archery_config.get("uat_host")
-# archery_obj = ArcheryAPI(
-#     host=archery_host,
-#     username=archery_config.get("username"),
-#     password=archery_config.get("password")
-# )
+from utils.archery_api import ArcheryAPI
+archery_config = GetYamlConfig().get_config("Archery")
+assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
+archery_host = archery_config.get("uat_host")
+archery_obj = ArcheryAPI(
+    host=archery_host,
+    username=archery_config.get("username"),
+    password=archery_config.get("password")
+)
 # pprint(archery_obj.get_workflows(w_id=303))
 # pprint(archery_obj.get_resource_groups())
-# pprint(archery_obj.get_instances(instance_name="isagent-report"))
+pprint(archery_obj.get_instances(instance_name="islot-main"))
+pprint(archery_obj.get_instances(instance_name="islot-v2"))
+pprint(archery_obj.get_instances(instance_name="islot-v3"))
+pprint(archery_obj.get_instances(instance_name="islot-v4"))
 
 
 
@@ -65,13 +68,17 @@ from pprint import pprint
 
 
 # cicdflow_utils.py
-# from cicdflow_utils import *
+from cicdflow_utils import *
 # sql_info = "isagent_isagent-merchant@@01.is01_ddl_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c\r\nisagent_isagent-merchant@@02.is01_ddl_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c\r\nisagent_isagent-merchant@@01.is01_dml_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c"
-# pprint(format_sql_info(sql_info))
-# nacos_info = "map-test.propertles@@add@@map-testkey@@map-testvalue\r\nmap-test-2.propertles@@update@@server.dns@@1.1.1.1\r\nmap-test-2.propertles@@delete@@need_delete_key"
-# # pprint(format_nacos_info(nacos_info))
+# sql_info_list = format_sql_info(sql_info)
+# print(sql_info_list)
+# print(thread_code_handle()
+# )
+
+# nacos_info = "map-test.propertles@@add@@yakir-add@@yakir-value\r\nmap-test.propertles@@update@@need_update@@2.2"
+# nacos_info_dict = format_nacos_info(nacos_info)
 # print(nacos_handle(
-#     nacos_info=nacos_info,
+#     nacos_info_dict=nacos_info_dict,
 #     product_id='ISLOT',
 #     environment='UAT'
 # ))
@@ -96,7 +103,7 @@ def yakir_test():
     #         issue_key="UP-20"
     #     )
     # )
-yakir_test()
+# yakir_test()
 
 
 
