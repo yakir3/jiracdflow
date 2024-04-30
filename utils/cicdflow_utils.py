@@ -94,15 +94,21 @@ def sql_submit_handle(
 
         # 开始提交处理逻辑
         submit_success_number = 0
-        for sql_index, sql_data in real_sql_info_list:
+        for sql_index, sql_data in enumerate(real_sql_info_list):
+            # 获取提交工单所需的参数
             sql_index = sql_index + 1
             repo_name = sql_data.get("repo_name")
             file_name = sql_data("file_name")
             commit_sha = sql_data("commit_sha")
-            # Archery 资源组名称
-            archery_resource_name = repo_name.split("_")[0]
-            # Archery 实例名称
-            archery_instance_name = repo_name.split("_")[1]
+            resource_name = repo_name.split("_")[0]
+            instance_name = repo_name.split("_")[1]
+            sql_content = get_sql_content_from_gitlab(
+                server_address=gitlab_host,
+                private_token=gitlab_token,
+                repo_name=repo_name,
+                file_name=file_name,
+                commit_sha=commit_sha
+            )
 
             # 查询 SqlWorkflow 表是否已存在 SQL 文件，不存在则提交，存在则跳过
             existed_flag = sqlworkflow_obj.objects.filter(
@@ -121,16 +127,10 @@ def sql_submit_handle(
                 "sql_index": sql_index,
                 "sql_file_name": file_name,
                 'sql_release_info': commit_sha,
-                "sql_content": get_sql_content_from_gitlab(
-                    server_address=gitlab_host,
-                    private_token=gitlab_token,
-                    repo_name=repo_name,
-                    file_name=file_name,
-                    commit_sha=commit_sha
-                ),
+                "sql_content": sql_content,
                 "workflow_name": workflow_name,
-                "resource_name": archery_resource_name,
-                "instance_name": archery_instance_name,
+                "resource_name": resource_name,
+                "instance_name": instance_name,
             }
             # 提交 Archery SQL 工单，提交成功保存入 SqlWorkflow 表
             commit_result = archery_obj.commit_workflow(**commit_data)
@@ -143,16 +143,14 @@ def sql_submit_handle(
             else:
                 d_logger.error(f"工单：{workflow_name} SQL：{file_name} 提交失败，提交版本：{commit_sha}")
 
-            # TODO: 获取提交 Archery SQL 备份工单数据
-            # TODO: 提交 Archery SQL 备份工单
+            # TODO: 获取提交 Archery SQL 备份工单数据，并提交备份工单
 
-        # 当前工单所有 SQL 文件提交成功
-        if len(real_sql_info_list) == submit_success_number:
-            return_data["status"] = True
-            return_data["msg"] = "SQL 文件提交到 Archery 成功"
-        # 存在 SQL 文件提交失败
-        else:
-            return_data["msg"] = "SQL 文件提交到 Archery 失败，检查日志"
+        # 判断是否所有 SQL 文件提交成功
+        assert len(real_sql_info_list) == submit_success_number, "有 SQL 文件提交到 Archery 失败，检查日志"
+        return_data["status"] = True
+        return_data["msg"] = "所有 SQL 文件提交到 Archery 成功"
+    except AssertionError as err:
+        return_data["msg"] = err.__str__()
     except Exception as err:
         return_data["msg"] = f"SQL 文件提交到 Archery 异常，异常原因：{traceback.format_exc()}"
     return return_data
@@ -200,47 +198,50 @@ def sql_upgrade_handle(
         sqlworkflow_obj = SqlWorkflow()
         # sqlworkflow_ser_obj = SqlWorkflowSerializer()
 
-        # TODO: 判断是否存在需要备份工单，先执行备份工单再执行后续 SQL. 获取 SqlWorkflow 表中所有待审核状态的备份工单?
+        # TODO: 获取 SqlWorkflow 表中所有待审核状态的备份工单，判断是否存在需要备份工单，先执行备份工单再执行后续 SQL.
 
         # 开始执行 SQL 逻辑，循环 sql_info 中每个 SQL 工单数据
         for sql_data in real_sql_info_list:
             file_name = sql_data("file_name")
             commit_sha = sql_data("commit_sha")
-            # 获取工单实例以及工单 ID
+
+            # 从数据库工单实例中获取工单 ID
             sqlworkflow_ins = sqlworkflow_obj.objects.get(
                 workflow_name=workflow_name,
                 sql_file_name=file_name,
                 sql_release_info=commit_sha
             )
             w_id = sqlworkflow_ins.w_id
+
             # 查询 Archery 上当前状态，根据状态对应处理
-            select_result = archery_obj.get_workflows(w_id=w_id)
+            select_result = archery_obj.get_workflow(w_id=w_id)
             assert select_result["status"], "查询 Archery 工单状态失败，检查日志"
-            select_workflow_status = select_result["data"][0]["status"]
+            w_status = select_result["data"]["w_status"]
 
             # workflow_manreviewing：执行自动审核
-            if select_workflow_status == "workflow_manreviewing":
+            if w_status == "workflow_manreviewing":
                 audit_result = archery_obj.audit_workflow(workflow_id=w_id)
                 assert audit_result["status"], f"工单 {workflow_name} SQL 自动审核失败，返回结果：{audit_result}"
                 d_logger.info(f"工单 {workflow_name} SQL 自动审核成功，SQL 文件：{file_name}，版本：{commit_sha}")
-                select_workflow_status = "workflow_review_pass"
+                w_status = "workflow_review_pass"
             # workflow_review_pass：执行自动执行
-            elif select_workflow_status == "workflow_review_pass":
+            elif w_status == "workflow_review_pass":
                 execute_result = archery_obj.execute_workflow(workflow_id=w_id)
                 sleep(15)
                 assert execute_result["status"], f"工单 {workflow_name} SQL 自动执行失败，返回结果：{execute_result}"
                 d_logger.info(f"工单 {workflow_name} SQL 自动执行成功，SQL 文件：{file_name}，版本：{commit_sha}")
-                select_workflow_status = "workflow_finish"
+                w_status = "workflow_finish"
             # workflow_finish：跳过
-            elif select_workflow_status == "workflow_finish":
+            elif w_status == "workflow_finish":
                 # d_logger.info(f"工单 {workflow_name} SQL 状态为 workflow_finish，SQL 文件：{file_name}，版本：{commit_sha}")
                 pass
             # workflow_queuing / workflow_exception：中止流程
             else:
                 # d_logger.error(f"工单 {workflow_name} SQL 状态为异常状态 {select_workflow_status}，SQL 文件：{file_name}，版本：{commit_sha}")
                 raise Exception("工单状态非正常状态，中止 SQL 执行流程，检查日志")
+
             # 保存工单状态到 SqlWorkflow 表中
-            sqlworkflow_ins.w_status = select_workflow_status
+            sqlworkflow_ins.w_status = w_status
             sqlworkflow_ins.save()
 
             # TODO: 获取提交 Archery SQL 备份工单数据
@@ -256,13 +257,14 @@ def sql_upgrade_handle(
             ).filter(w_status="workflow_finish")
             if finish_flag:
                 workflow_finish_number += 1
-        # 当前工单所有 SQL 文件自动审核和自动执行成功
-        if len(real_sql_info_list) == workflow_finish_number:
-            return_data["status"] = True
-            return_data["msg"] = "SQL 自动审核与自动执行成功"
-        # 存在 SQL 自动审核或自动执行失败
-        else:
-            return_data["msg"] = "SQL 自动审核或自动执行失败，检查日志"
+
+
+        # 判断是否所有 SQL 文件自动审核与自动执行成功
+        assert len(real_sql_info_list) == workflow_finish_number, "有 SQL 自动审核或自动执行失败，检查日志"
+        return_data["status"] = True
+        return_data["msg"] = "所有 SQL 自动审核与自动执行成功"
+    except AssertionError as err:
+        return_data["msg"] = err.__str__()
     except Exception as err:
         return_data["msg"] = f"SQL 自动审核或自动执行异常，异常原因：{traceback.format_exc()}"
     return return_data

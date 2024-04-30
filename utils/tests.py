@@ -6,21 +6,34 @@ from pprint import pprint
 
 
 # Archery
-from utils.archery_api import ArcheryAPI
-archery_config = GetYamlConfig().get_config("Archery")
-assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
-archery_host = archery_config.get("uat_host")
-archery_obj = ArcheryAPI(
-    host=archery_host,
-    username=archery_config.get("username"),
-    password=archery_config.get("password")
-)
-# pprint(archery_obj.get_workflows(w_id=303))
-# pprint(archery_obj.get_resource_groups())
-pprint(archery_obj.get_instances(instance_name="islot-main"))
-pprint(archery_obj.get_instances(instance_name="islot-v2"))
-pprint(archery_obj.get_instances(instance_name="islot-v3"))
-pprint(archery_obj.get_instances(instance_name="islot-v4"))
+# from utils.archery_api import ArcheryAPI
+# archery_config = GetYamlConfig().get_config("Archery")
+# assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
+# archery_host = archery_config.get("uat_host")
+# archery_obj = ArcheryAPI(
+#     host=archery_host,
+#     username=archery_config.get("username"),
+#     password=archery_config.get("password")
+# )
+# pprint(archery_obj.get_workflow(w_id=303))
+# pprint(archery_obj.get_resource_group(resource_name="islot"))
+# pprint(archery_obj.get_instance(instance_name="islot-main"))
+# pprint(archery_obj.get_instance(instance_name="islot-v2"))
+# pprint(archery_obj.get_instance(instance_name="islot-v3"))
+# pprint(archery_obj.get_instance(instance_name="islot-v4"))
+# pprint(archery_obj.commit_workflow(
+#     sql_index=0,
+#     sql_file_name="yakir-test",
+#     sql_release_info="manual",
+#     sql_content="select 1;",
+#     workflow_name="yakir-test",
+#     demand_url="yakir-test",
+#     resource_name="islot",
+#     instance_name="islot-v3",
+#     db_name=None,
+#     is_backup=False,
+#     engineer="cdflow"
+# ))
 
 
 

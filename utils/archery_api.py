@@ -66,120 +66,119 @@ class ArcheryAPI(object):
         return wrapper
 
     @_login_required
-    def get_workflows(
+    def get_workflow(
             self,
             w_id: int = 0,
-            w_status: str = None,
-            workflow_name: str = None,
             size: int = 100,
     ) -> Dict[str, Union[bool, str, Dict]]:
         return_data = {
             "status": False,
             "msg": "",
-            "data": {}
+            "data": dict()
         }
         data = {
             "id": w_id,
-            "workflow__status": w_status,
-            "workflow__workflow_name__icontains": workflow_name,
             "size": size
         }
         try:
             res = requests.get(url=self.workflow_url, params=data, headers=self._api_headers)
             if res.status_code == 200:
-                res_data = res.json()
-                if res_data["count"] == 0:
-                    return_data["msg"] = "查询工单结果为空"
-                    return_data["data"] = res_data
-                else:
-                    tmp_list = []
-                    for index in range(res_data["count"]):
-                        name = res_data["results"][index]["workflow"]["workflow_name"]
-                        wid = res_data["results"][index]["workflow"]["id"]
-                        status = res_data["results"][index]["workflow"]["status"]
-                        try:
-                            execute_result = literal_eval(res_data["results"][index]["execute_result"])
-                        except SyntaxError:
-                            execute_result = ""
-                        tmp_list.append({"name": name, "id": wid, "status": status, "execute_result": execute_result})
-                    return_data["status"] = True
-                    return_data["msg"] = "查询工单成功。"
-                    return_data["data"] = tmp_list
+                res_json = res.json()
+                assert res_json["count"], "查询工单结果为空"
+                archery_results = res_json["results"][0]["workflow"]
+
+                return_data["status"] = True
+                return_data["msg"] = "查询工单成功"
+                return_data["data"] = {
+                    "w_id": archery_results["id"],
+                    "w_status": archery_results["status"],
+                    "instance": archery_results["instance"],
+                    "group_id": archery_results["group_id"],
+                    "db_name": archery_results["db_name"],
+                    "workflow_name": archery_results["workflow_name"]
+                }
             else:
-                return_data["msg"] = "查询工单失败，请求接口返回非200"
-                return_data["data"] = res.text
+                return_data["msg"] = f"查询工单失败，Archery 接口返回 {res.text}"
+        except AssertionError as err:
+            return_data["msg"] = err.__str__()
         except Exception as err:
-            return_data["msg"] = f"提交工单异常，异常原因: {err.__str__()}"
+            return_data["msg"] = f"查询工单异常，异常原因: {err.__str__()}"
         return return_data
 
     @_login_required
-    def get_resource_groups(
+    def get_resource_group(
             self,
+            resource_name: str = None
     ):
         return_data = {
             "status": False,
             "msg": "",
-            "data": {}
+            "data": dict()
         }
         try:
             res = requests.get(url=self.resource_group_url, headers=self._api_headers)
-            res_data = res.json()
             if res.status_code == 200:
-                result = {
-                    res_data["results"][index]["group_name"]:res_data["results"][index]["group_id"] for index in range(res_data["count"])
-                }
+                res_json = res.json()
+
+                assert res_json["count"], "查询实例信息结果为空"
+                archery_results = res_json["results"]
+                for archery_result in archery_results:
+                    if archery_result["group_name"] == resource_name:
+                        return_data["data"] = archery_result
+                assert return_data["data"], f"查询资源组 {resource_name} 不存在 Archery 资源组列表中"
+
                 return_data["status"] = True
-                return_data["msg"] = "查询资源组信息成功。"
-                return_data["data"] = result
+                return_data["msg"] = "查询资源组信息成功"
             else:
-                return_data["msg"] = "查询资源组信息失败，请求接口返回非200"
-                return_data["data"] = res_data
-            return return_data
+                return_data["msg"] = f"查询资源组信息失败，Archery 接口返回 {res.text}"
+        except AssertionError as err:
+            return_data["msg"] = err.__str__()
         except Exception as err:
             return_data["msg"] = f"查询资源组信息异常，异常原因：{err}"
-            return return_data
+        return return_data
 
     @_login_required
-    def get_instances(
+    def get_instance(
             self,
             instance_name: str = None,
+            size: int = 100
     ):
         return_data = {
             "status": False,
             "msg": "",
-            "data": {}
+            "data": dict()
         }
         try:
             data = {
-                "size": 100,  # 查询实例数量
+                "size": size
             }
             res = requests.get(url=self.instance_url, params=data, headers=self._api_headers)
-            res_data = res.json()
             if res.status_code == 200:
-                tmp_data = {}
-                for index in range(res_data["count"]):
-                    _instance_name = res_data["results"][index]["instance_name"]
-                    instance_id = res_data["results"][index]["id"]
-                    db_name = res_data["results"][index]["db_name"]
-                    if instance_name == _instance_name:
-                        tmp_data[instance_name] = {"id": instance_id, "db_name": db_name}
+                res_json = res.json()
+                assert res_json["count"], "查询实例信息结果为空"
+                archery_results = res_json["results"]
+
+                for archery_result in archery_results:
+                    if archery_result["instance_name"] == instance_name:
+                        return_data["data"] = archery_result
+                assert return_data["data"], f"查询实例 {instance_name} 不存在 Archery 实例列表中"
+
                 return_data["status"] = True
                 return_data["msg"] = "查询实例信息成功"
-                return_data["data"] = tmp_data
             else:
-                return_data["msg"] = "查询实例信息失败, 请求查询接口响应非200"
-                return_data["data"] = res_data
-            return return_data
+                return_data["msg"] = f"查询实例信息失败, Archery 接口返回 {res.text}"
+        except AssertionError as err:
+            return_data["msg"] = err.__str__()
         except Exception as err:
             return_data["msg"] = f"查询实例信息异常，异常原因：{err}"
-            return return_data
+        return return_data
 
     @_login_required
     def commit_workflow(
             self,
             sql_index: int = 0,
             sql_file_name: str = None,
-            sql_release_info: int = 0,
+            sql_release_info: str = None,
             sql_content: str = None,
             workflow_name: str = None,
             demand_url: str = "问题描述",
@@ -192,12 +191,13 @@ class ArcheryAPI(object):
         """
         Args:
             sql_index: SQL 执行序号
+            sql_file_name: SQL 文件名
             sql_release_info: SQL 版本信息
             sql_content: SQL 文件内容
             workflow_name: 工单名称
             demand_url: 问题描述链接
-            resource_name: 资源组 ID
-            instance_name: 实例 ID
+            resource_name: 资源组名称
+            instance_name: 实例名称
             db_name: 数据库名称
             is_backup: 是否备份
             engineer: 发起人
@@ -207,33 +207,23 @@ class ArcheryAPI(object):
         return_data = {
             "status": False,
             "msg": "",
-            "data": {}
+            "data": dict()
         }
-        if not sql_content:
-            return_data["msg"] = "提交工单失败，sql 文件内容不能为空或 None"
-            return return_data
         try:
-            # 查询 group_id
-            groups_info = self.get_resource_groups()
-            if resource_name not in groups_info["data"].keys():
-                return_data["msg"] = groups_info["msg"]
-                return_data["data"] = groups_info["data"]
-                return return_data
-            else:
-                group_id = groups_info["data"][resource_name]
+            assert sql_content, "提交工单失败，sql 文件内容不能为空或 None"
 
-            # 查询 instance_id 和 db_name
-            instance_info = self.get_instances(instance_name=instance_name)
-            if not instance_info["status"]:
-                return_data["msg"] = instance_info["msg"]
-                return_data["data"] = instance_info["data"]
-                return return_data
-            else:
-                # 单实例多数据库时判断是否传 db_name
-                db_name = db_name if db_name else instance_info["data"][instance_name]["db_name"]
-                instance_id = instance_info["data"][instance_name]["id"]
+            # 调用 get_resource_group 方法，通过 resouce_group_name 获取 group_id
+            resource_group_info = self.get_resource_group(resource_name=resource_name)
+            assert resource_group_info["status"], "查询资源组失败，检查 resource_name 参数"
+            group_id = resource_group_info["data"]["group_id"]
 
-            # req data
+            # 调用 get_instance 方法，通过 instance_name 获取 instance_id 和 db_name
+            instance_info = self.get_instance(instance_name=instance_name)
+            assert instance_info["status"], "查询实例信息失败，检查 instance_name 参数"
+            instance_id = instance_info["data"]["id"]
+            db_name = db_name if db_name else instance_info["data"]["db_name"]
+
+            # 调用 Archery openapi workflow 接口提交工单
             current_time = datetime.now()
             future_time = current_time + timedelta(days=self.executable_time_range)
             data = {
@@ -253,7 +243,6 @@ class ArcheryAPI(object):
                 },
             }
             res = requests.post(url=self.workflow_url, json=data, headers=self._api_headers)
-            res_data = res.json()
             if res.status_code == 201:
                 # workflow_abort                工作流中止
                 # workflow_autoreviewwrong      工作流程自动审核错误
@@ -265,21 +254,25 @@ class ArcheryAPI(object):
                 # workflow_review_pass          工作流程review_pass
                 # workflow_timingtask           工作流计时任务
                 # workflow_manreviewing         提交成功等待审核
-                if res_data["workflow"]["status"] == "workflow_manreviewing":
-                    result_data = {
-                        "w_id": int(res_data["workflow"]["id"]),
-                        "sql_index": int(res_data["workflow"]["sql_index"]),
-                        "sql_release_info": int(res_data["workflow"]["sql_release_info"]),
-                        "workflow_name": res_data["workflow"]["workflow_name"],
-                        "w_status": res_data["workflow"]["status"],
-                        "sql_file_name": sql_file_name
-                    }
-                    result = {"status": True, "msg": "提交工单成功,等待审核", "data": result_data}
-                else:
-                    result = {"status": False, "msg": "提交工单成功，状态异常,请登陆archery后台查看", "data": ""}
-                return result
+                res_json = res.json()
+                w_id = res_json["workflow"]["id"]
+                w_status = res_json["workflow"]["status"]
+
+                return_data["status"] = True
+                return_data["msg"] = f"工单 {workflow_name} 提交成功，等待审核"
+                return_data["data"] = {
+                    "w_id": w_id,
+                    "sql_index": sql_index,
+                    "sql_release_info": sql_release_info,
+                    "workflow_name": workflow_name,
+                    "w_status": w_status,
+                    "sql_file_name": sql_file_name
+                }
             else:
-                return {"status": False, "msg": "提交工单失败", "data": res.json()}
+                return_data["msg"] = f"工单 {workflow_name} 提交失败，检查 Archery 日志"
+                return_data["data"] = res.text
+        except AssertionError as err:
+            return_data["msg"] = err.__str__()
         except Exception as err:
             return_data["msg"] = f"提交工单异常，异常原因: {err.__str__()}"
         return return_data
