@@ -33,8 +33,8 @@ class JiraEventWebhookAPI(JiraWebhookData):
         }
 
     def created_event_action(
-            self, 
-            current_issue_data: Dict, 
+            self,
+            current_issue_data: Dict,
     ) -> Dict[str, Union[bool, str, Dict]]:
         """
         webhook event 值为 jira:issue_created。判断是否有 SQL，并转换进行下一状态
@@ -133,29 +133,30 @@ class JiraEventWebhookAPI(JiraWebhookData):
         current_environment = current_issue_data["environment"]
 
         try:
-            self.webhook_return_data["status"] = True
-            self.webhook_return_data["msg"] = "SQL PROCESSING 状态，功能待上线，忽略触发动作"
-            # # 升级 SQL 主逻辑
-            # start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # d_logger.info(f"工单 {current_summary} 开始执行 SQL，开始时间：{start_time}")
-            # # 调用 sql_upgrade_handle 函数执行配置自动变更
-            # sql_upgrade_res = sql_upgrade_handle(
-            #     workflow_name=current_summary,
-            #     sql_info=current_sql_info,
-            #     environment=current_environment
-            # )
-            # end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # d_logger.info(f"工单 {current_summary} 执行 SQL 结束，结束时间：{end_time}")
-            #
-            # # sql 升级成功，流程转换到下一步
-            # if sql_upgrade_res["status"]:
-            #     jira_obj.change_transition(current_issue_key, "SqlUpgradeSuccessful")
-            #     self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级成功，转换到状态 <CONFIG PROCESSING>"
-            # # sql 升级失败，流程转换 FIX PENDING
-            # else:
-            #     jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
-            #     self.webhook_return_data["status"] = False
-            #     self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级失败，转换到状态 <FIX PENDING>"
+            # 格式化 sql_info 数据
+            sql_info_list = format_sql_info(current_sql_info)
+
+            # 升级 SQL 主逻辑
+            start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            d_logger.info(f"工单 {current_summary} 开始执行 SQL，开始时间：{start_time}")
+            # 调用 sql_upgrade_handle 函数执行配置自动变更
+            sql_upgrade_res = sql_upgrade_handle(
+                sql_info_list=sql_info_list,
+                workflow_name=current_summary,
+                environment=current_environment
+            )
+            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            d_logger.info(f"工单 {current_summary} 执行 SQL 结束，结束时间：{end_time}")
+
+            # sql 升级成功，流程转换到下一步
+            if sql_upgrade_res["status"]:
+                jira_obj.change_transition(current_issue_key, "SqlUpgradeSuccessful")
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级成功，转换到状态 <CONFIG PROCESSING>"
+            # sql 升级失败，流程转换 FIX PENDING
+            else:
+                jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
+                self.webhook_return_data["status"] = False
+                self.webhook_return_data["msg"] = f"升级工单 {current_summary} SQL 升级失败，转换到状态 <FIX PENDING>"
         except Exception:
             self.webhook_return_data["msg"] = f"升级工单 {current_summary} <SQL PROCESSING> webhook 触发失败，异常原因：{traceback.format_exc()}"
             jira_obj.change_transition(current_issue_key, "SqlUpgradeFailed")
