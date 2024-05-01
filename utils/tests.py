@@ -1,51 +1,122 @@
 from django.test import TestCase
 import sys
 sys.path.append("..")
+from utils.getconfig import GetYamlConfig
 from pprint import pprint
+
 
 # Archery
 # from utils.archery_api import ArcheryAPI
-# archery_obj = ArcheryAPI()
-# pprint(archery_obj.get_resource_groups())
-# pprint(archery_obj.get_instances(instance_name='isagent-report'))
-# pprint(archery_obj.get_workflows(w_id=303))
+# archery_config = GetYamlConfig().get_config("Archery")
+# assert archery_config, "获取 Archery 配置信息失败，检查 config.yaml 配置文件。"
+# archery_host = archery_config.get("uat_host")
+# archery_obj = ArcheryAPI(
+#     host=archery_host,
+#     username=archery_config.get("username"),
+#     password=archery_config.get("password")
+# )
+# pprint(archery_obj.get_workflow(w_id=303))
+# pprint(archery_obj.get_resource_group(resource_name="islot"))
+# pprint(archery_obj.get_instance(instance_name="islot-main"))
+# pprint(archery_obj.get_instance(instance_name="islot-v2"))
+# pprint(archery_obj.get_instance(instance_name="islot-v3"))
+# pprint(archery_obj.get_instance(instance_name="islot-v4"))
+# pprint(archery_obj.commit_workflow(
+#     sql_index=0,
+#     sql_file_name="yakir-test",
+#     sql_release_info="manual",
+#     sql_content="select 1;",
+#     workflow_name="yakir-test",
+#     demand_url="yakir-test",
+#     resource_name="islot",
+#     instance_name="islot-v3",
+#     db_name=None,
+#     is_backup=False,
+#     engineer="cdflow"
+# ))
+
+
 
 # CMDB
-from utils.cmdb_api import CmdbAPI
-cmdb_obj = CmdbAPI()
-# code_data = {'svn_path': '/qc/rex-user-center', 'code_version': 5719, 'svn_version': 5719, 'tag': 'v2', 'project_name': 'rex-user-center'}
-# pprint(cmdb_obj.search_by_project_name(project_name='frontend-isagent-web', tag='v2'))
+# from utils.cmdb_api import CmdbAPI
+# cmdb_config = GetYamlConfig().get_config("CMDB")
+# assert cmdb_config, f"获取 CMDB 配置信息失败，检查 config.yaml 配置文件。"
+# cmdb_host = cmdb_config.get("host")
+# cmdb_token = cmdb_config.get("token")
+# cmdb_vmc_host = cmdb_config.get("UAT").get("ISLOT-AGENT").get("vmc_host")
+# # 创建 CMDB 对象
+# cmdb_obj = CmdbAPI(
+#     host=cmdb_host,
+#     token=cmdb_token
+# )
+# pprint(
+#     cmdb_obj.search_by_project_name(
+#         service_name="frontend-isagent-web",
+#         environment="UAT",
+#         vmc_host=cmdb_vmc_host
+#     )
+# )
 # pprint(
 #     cmdb_obj.project_deploy(
-#         project_name='frontend-test-xxx',
-#         tag='',
-#         svn_path=None,
-#         svn_version='xxx111',
-#         code_version='xxx111'
+#         service_name="backend-islot-api-gci",
+#         code_version="346f5638a670e06a72c22d7bbcea5a4498da8113",
+#         branch="release_uat_4",
+#         environment="UAT",
+#         vmc_host=cmdb_vmc_host
 #     )
 # )
 
-# from cicdflow_util import thread_upgrade
-# wait_upgrade_list = [
-#     {'svn_path': '/qc/rex-task-center', 'code_version': 5103, 'svn_version': 5103, 'tag': '', 'project_name': 'rex-task-center'},
-#     {'svn_path': '/qc/rex-frontend-stable/prod', 'code_version': 5899, 'svn_version': 5899, 'tag': '', 'project_name': 'rex-frontend-stable-pro'}
-# # ]
-# upgrade_success_list = []
-# upgrade_info_list = []
-# upgrade_success_list, upgrade_info_list = thread_upgrade(
-#     # 待升级工程数据列表
-#     wait_upgrade_list,
-#     # 升级完成的工程数据列表
-#     upgrade_success_list,
-#     # 升级完成的工程名称列表
-#     upgrade_info_list
-# )
-# print(upgrade_success_list)
-# print('======================')
-# print(upgrade_info_list)
 
 # Jira
-from cicdflow_util import JiraAPI
-jira_obj = JiraAPI()
-res = jira_obj.get_issue_info(issue_id=28021)
-pprint(res)
+# from utils.jira_api import JiraAPI
+# jira_obj = JiraAPI()
+# pprint(jira_obj.get_issue_info(issue_id=28021))
+# pprint(jira_obj.change_transition("UP-7", "ToUpgradeUAT"))
+# from utils.jira_api import JiraWebhookData
+# request_data = {}
+# jira_event_webhook_obj = JiraWebhookData(request_data)
+# res = jira_event_webhook_obj.get_custom_issue_data()
+# print(res)
+# print(jira_event_webhook_obj.webhook_event)
+
+
+# cicdflow_utils.py
+from cicdflow_utils import *
+# sql_info = "isagent_isagent-merchant@@01.is01_ddl_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c\r\nisagent_isagent-merchant@@02.is01_ddl_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c\r\nisagent_isagent-merchant@@01.is01_dml_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c"
+# sql_info_list = format_sql_info(sql_info)
+# print(sql_info_list)
+# print(thread_code_handle()
+# )
+
+# nacos_info = "map-test.propertles@@add@@yakir-add@@yakir-value\r\nmap-test.propertles@@update@@need_update@@2.2"
+# nacos_info_dict = format_nacos_info(nacos_info)
+# print(nacos_handle(
+#     nacos_info_dict=nacos_info_dict,
+#     product_id='ISLOT',
+#     environment='UAT'
+# ))
+
+# python manage.py shell
+# from utils.tests import yakir_test
+# yakir_test()
+def yakir_test():
+    from utils.cicdflow_utils import format_code_info, compare_list_info, thread_code_handle
+    last_code_info = None
+    current_code_info = "backend-islot-api-gci@@346f5638a670e06a72c22d7bbcea5a4498da8113@@release_uat_4\r\nbackend-islot-api-report@@a41557a52ee242000baf42ca5a6658eab5b97929@@release_uat_4"
+    last_code_info_list = format_code_info(code_info=last_code_info, environment="UAT")
+    current_code_info_list = format_code_info(code_info=current_code_info, environment="UAT")
+    print(last_code_info_list, current_code_info_list)
+    print(compare_list_info(last_code_info_list, current_code_info_list))
+    # pprint(
+    #     thread_code_handle(
+    #         last_code_info=last_code_info,
+    #         current_code_info=current_code_info,
+    #         product_id="ISLOT",
+    #         environment="UAT",
+    #         issue_key="UP-20"
+    #     )
+    # )
+# yakir_test()
+
+
+

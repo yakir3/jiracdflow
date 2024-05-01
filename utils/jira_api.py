@@ -3,14 +3,12 @@ from typing import Union, Dict
 from ast import literal_eval
 from utils.getconfig import GetYamlConfig
 
-__all__ = ['JiraWebhookData', 'JiraAPI']
-
-# 获取 JIRA 配置信息
-jira_config = GetYamlConfig().get_config('JIRA')
+__all__ = ["JiraWebhookData", "JiraAPI"]
 
 class JiraWebhookData(object):
     """
-    初始化 Jira WebHook 请求数据，格式化为 JiraIssueSerializer 序列化器格式
+    初始化 Jira webhook 请求数据，格式化为 JiraIssueSerializer 序列化器格式
+    customfield_11113: 项目名称
     customfield_11100: 功能列表
     customfield_11104: 升级类型
     customfield_11106: 是否关厅
@@ -19,154 +17,192 @@ class JiraWebhookData(object):
     customfield_11110: Config
     customfield_11112: Code
     """
-    def __init__(self, data: Dict):
-        self._data = data
-        # isinstance(self._data, Dict)
-        self._changelog = None
-        self._issue_key = None
-        self._issue_id = None
-        self._summary = None
-        self._status = None
-        self._project = None
-        self._priority = None
-        self._labels = None
-        self._environment = None
-        self._sql_info = None
-        self._apollo_info = None
-        self._config_info = None
-        self._code_info = None
-        self._webhook_event = None
-        self._return_data = dict()
+    def __init__(self, request_data: Dict):
+        self.request_data = request_data
+        # isinstance(self.request_data, Dict)
+        self.changelog = None
+        self.issue = None
+        self.issue_event_type_name = None
+        self.timestramp = None
+        self.user = None
+        self.webhook_event = None
+        self.return_data = dict()
 
     def _convert_issue_data(self):
-        # changelog 与 webhook_event 数据，用于流程处理
+        # changelog 字段数据
         try:
-            self._changelog = self._data.get('changelog')
-            self._fromstring = self._changelog['items'][0]['fromString']
-            self._tostring = self._changelog['items'][0]['toString']
-        except:
-            self._fromstring = None
-            self._tostring = None
-        self._webhook_event = self._data.get('webhookEvent')
+            self.changelog = self.request_data.get("changelog")
+            self.fromstring = self.changelog["items"][0]["fromString"]
+            self.tostring = self.changelog["items"][0]["toString"]
+        except Exception as err:
+            self.fromstring = None
+            self.tostring = None
 
-        # issue 升级数据
-        self._issue = self._data.get('issue')
-        self._issue_id = self._issue.get('id')
-        self._issue_key = self._issue.get('key')
-        self._issue_fields = self._issue.get('fields')
-        self._summary = self._issue_fields.get('summary')
-        self._status = self._issue_fields.get('status')['name']
-        self._project = self._issue_fields.get('project')['name']
-        self._priority = self._issue_fields.get('priority')['name']
-        self._labels = self._issue_fields.get('labels')
-        self._environment = self._issue_fields.get('environment')
-        # issue sql_info
-        self._sql_info_str = self._issue_fields.get('customfield_10201')
-        self._sql_info = literal_eval(self._sql_info_str)
-        # issue apollo_info
-        self._apollo_info_str = self._issue_fields.get('customfield_10104')
-        self._apollo_info = literal_eval(self._apollo_info_str)
-        # issue config_info
-        self._config_info_str = self._issue_fields.get('customfield_10100')
-        self._config_info = literal_eval(self._config_info_str)
-        # issue code_info
-        self._code_info_str = self._issue_fields.get('customfield_10103')
-        self._code_info = literal_eval(self._code_info_str)
+        # issue 字段数据
+        self.issue = self.request_data.get("issue")
+        # issue_id issue_key 数据
+        self.issue_id = self.issue.get("id")
+        self.issue_key = self.issue.get("key")
+        # 获取 issue_fields 数据, 通过 issue_fields 数据拿到自定义数据
+        issue_fields = self.issue.get("fields")
+        # issuetype 数据
+        self.issue_type = issue_fields.get("issuetype").get("name")
+        # jira_project 数据
+        self.jira_project = issue_fields.get("project").get("name")
+        # product_id 数据
+        self.product_id = issue_fields.get("customfield_11113").get("value")
+        # summary 数据
+        self.summary = issue_fields.get("summary")
+        # issue_status 数据
+        self.issue_status = issue_fields.get("status").get("name")
+        # environment 数据
+        self.environment = issue_fields.get("environment")
+        # close_hall 数据
+        self.close_hall = issue_fields.get("customfield_11106").get("value")
+        # function_list 数据
+        self.function_list = issue_fields.get("customfield_11100")
+        # sql_info 数据
+        self.sql_info = issue_fields.get("customfield_11108")
+        # nacos_info 数据
+        self.nacos_info = issue_fields.get("customfield_11109")
+        # config_info 数据
+        self.config_info = issue_fields.get("customfield_11110")
+        # code_info 数据
+        self.code_info = issue_fields.get("customfield_11112")
 
-    def get_issue_data(self) -> Union[str, Dict]:
+        # webhookEvent 字段数据
+        self.webhook_event = self.request_data.get("webhookEvent")
+
+    def get_custom_issue_data(self) -> Dict[str, Union[bool, str, Dict]]:
+        return_data = {
+            "status": False,
+            "msg": "",
+            "data": dict()
+        }
         try:
+            # 解析 Jira webhook 数据
             self._convert_issue_data()
-            self._return_data = {
-                'fromstring': self._fromstring,
-                'tostring': self._tostring,
-                'issue_id': self._issue_id,
-                'issue_key': self._issue_key,
-                'summary': self._summary,
-                'status': self._status,
-                'project': self._project,
-                'priority': self._priority,
-                'labels': self._labels,
-                'environment': self._environment,
-                'sql_info': self._sql_info,
-                'nacos': self._nacos_info,
-                'config_info': self._config_info,
-                'code_info': self._code_info,
-                'webhook_event': self._webhook_event
+            # 返回自定义解析数据
+            return_data["status"] = True
+            return_data["msg"] = "Jira webhook 解析成自定义数据成功。"
+            return_data["data"] = {
+                "fromstring": self.fromstring,
+                "tostring": self.tostring,
+                "issue_id": self.issue_id,
+                "issue_key": self.issue_key,
+                "jira_project": self.jira_project,
+                "issue_type": self.issue_type,
+                "product_id": self.product_id,
+                "summary": self.summary,
+                "issue_status": self.issue_status,
+                "environment": self.environment,
+                "close_hall": self.close_hall,
+                "function_list": self.function_list,
+                "sql_info": self.sql_info,
+                "nacos_info": self.nacos_info,
+                "config_info": self.config_info,
+                "code_info": self.code_info,
+                "webhook_event": self.webhook_event
             }
         except Exception as err:
-            print(err)
-            return f"Jira webhook 数据解析出错，错误原因：{err.__str__()}"
-        # print(self._return_data)
-        return self._return_data
+            return_data["msg"] = f"Jira webhook 数据解析异常，异常原因：{err.__str__()}"
+        return return_data
 
 class JiraAPI(object):
-    def __init__(self, jira_config=jira_config):
-        self.jira_host = jira_config.get('host')
-        self.jira_user = jira_config.get('user')
-        self.jira_pwd  = jira_config.get('password')
+    def __init__(
+            self,
+            host: str = None,
+            username: str = None,
+            password: str = None
+    ):
+        self.host = host
+        self.user = username
+        self._password = password
 
-    def _jira_login(self):
-        self.jira = JIRA(self.jira_host, auth=(self.jira_user, self.jira_pwd))
-        return self.jira
+    @staticmethod
+    def _login_required(func):
+        def wrapper(self, *args, **kwargs):
+            try:
+                # 获取 JIRA 配置信息
+                jira_config = GetYamlConfig().get_config("JIRA")
+                self.host = jira_config.get("host")
+                self.username = jira_config.get("username")
+                self.password = jira_config.get("password")
 
+                # 登录并返回 JIRA 对象
+                self.jira_obj = JIRA(self.host, auth=(self.username, self.password))
+
+                result = func(self, *args, **kwargs)
+                return result
+            except Exception as err:
+                return_data = {
+                    "status": False,
+                    "msg": f"CMDB 鉴权失败，异常原因：{err.__str__()}"
+                }
+                return return_data
+        return wrapper
+
+    @_login_required
     def get_issue_info(
             self,
             issue_id: str = None
     ) -> Dict[str, Union[bool, str, Dict]]:
         return_data = {
-            'status': False,
-            'msg': '',
-            'data': {}
+            "status": False,
+            "msg": "",
+            "data": {}
         }
 
         try:
-            jira_obj = self._jira_login()
-
             # 问题域所有数据
-            fields = jira_obj.issue(id=issue_id).fields
-            print(fields.customfield_11108)
-            print(type(fields.customfield_11108))
-
+            issue_obj = self.jira_obj.issue(id=issue_id)
+            issue_fields = issue_obj.fields
             # 返回 issue 数据
             issue_info = {
-                'issue_id': issue_id,
-                'summary': fields.summary,
-                'issue_status': fields.status.name,
-                'sql_info': fields.customfield_11108,
-                'nacos_info': fields.customfield_11109,
-                'config_info': fields.customfield_11110,
-                'code_info_list': fields.customfield_11112
+                "issue_id": issue_id,
+                "summary": issue_fields.summary,
+                "issue_status": issue_fields.status.name,
+                "sql_info": issue_fields.customfield_11108,
+                "nacos_info": issue_fields.customfield_11109,
+                "config_info": issue_fields.customfield_11110,
+                "code_info": issue_fields.customfield_11112
             }
-            return_data['status'] = True
-            return_data['msg'] = 'Jira 工单查询成功。'
-            return_data['data'] = issue_info
+            return_data["status"] = True
+            return_data["msg"] = "Jira 工单查询成功。"
+            return_data["data"] = issue_info
         except Exception as err:
-            return_data['msg'] = f"Jira 工单查询失败异常，异常原因: {err.__str__()}"
+            return_data["msg"] = f"Jira 工单查询失败异常，异常原因: {err.__str__()}"
         return return_data
 
+    @_login_required
     def change_transition(
             self,
             issue_id: str = None,
             change_id: str = None
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Union[str, bool]]:
+        """
+        Args:
+            issue_id: Jira IssueID or Jira IssueKey
+            change_id:  Transition state name
+        Returns:
+            status: bool
+            msg: message
+        """
         return_data = {
-            'status': False,
-            'msg': '',
+            "status": False,
+            "msg": "",
         }
-        jira_obj = self._jira_login()
-        if issue_id is None or change_id is None:
-            return_data['msg'] = 'issue_id or change_id is None!'
-            return return_data
         try:
-            res = jira_obj.transition_issue(
-                jira_obj.issue(id=issue_id), change_id
+            res = self.jira_obj.transition_issue(
+                issue_id,
+                change_id
             )
-            return_data['status'] = True
-            return_data['msg'] = f'Jira 工单变更完成, {res}'
+            return_data["status"] = True
+            return_data["msg"] = f"Jira 工单变更成功, {res}"
         except Exception as err:
-            return_data['msg'] = f"Jira 工单变更异常，异常原因: {err.__str__()}"
+            return_data["msg"] = f"Jira 工单变更异常，异常原因: {err.__str__()}"
         return return_data
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass

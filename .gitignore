@@ -130,5 +130,6 @@ cython_debug/
 
 # Yakir
 tmp/
-static/*
 config/*.yaml
+logs/
+static/*

@@ -1,34 +1,44 @@
-Apollo:
-  X1:
-    username: apollo
-    password: xxx
-    portal_url: http://xxx/
-    login_url: http://xxx/signin
-  X2:
-    username: apollo
-    password: xxx
-    portal_url: https://xxx/
-    login_url: https://xxx/signin
-
 Archery:
-  schema:
-    archery:
-      group_id: 1
-      instance_id: 1
-      db_name: archery
-  auth:
-    username: yakir
-    password: yakir
-    token_url: http://xxx.com/api/auth/token/
-    refresh_url: http://xxx.com/api/auth/token/refresh/
-    verify_url: http://xxx.com/api/auth/token/verify/
-  v1:
-    sql_ticket_url: http://xxx.com/api/v1/workflow/
+  uat_host: https://uat.com
+  prod_host: https://prod.com
+  username: cdflow
+  password: xxx
+
+CMDB:
+  host: https://cmdb.com
+  token: xxx
+
+Gitlab:
+  host: https://gitlab.com
+  username: API
+  password: API
+
+JIRA:
+  host: http://jira.com
+  username: cdflow
+  password: cdflow
+
+Nacos:
+  Product1:
+    host: https://nacos.com
+    username: API
+    password: API
+    uat_namespace: xxx
+    prod_namespace: xxx
+    group: DEFAULT_GROUP
+  Product2:
+    host: https://nacos.net
+    username: API
+    password: API
+    uat_namespace: xxx
+    prod_namespace: xxx
+    group: DEFAULT_GROUP
 
 Tool:
   SVN:
-    username: yakir
-    password: yakir
+    url: svn://1.1.1.1/
+    username: API
+    password: API
   Redis:
     host: localhost
     port: 6379
@@ -37,23 +47,12 @@ Tool:
   Email:
     smtp_server: xxx
     smtp_port: 25
-    sender: xxx
-    password: xxx
-    from: xxx
-    to: xxx
-    receivers: ['xxx']
+    password: emailPassword
+    sender: sender@gmail.com
+    from: sender<@gmail.com>
+    to: receiver<receiver@gmail.com>
+    receivers: ['receiver@gmail.com']
   Postgres:
     host: 1.1.1.1
     port: 5432
-    scheme: {user: xxx, password: xxx, database: xxx}
-
-JIRA:
-  host: https://xxx.com
-  user: yakir
-  password: yakir
-
-CMDB:
-  search_url: https://xxx.com
-  upgrade_url: https://xxx.com
-  domain: xxx.com
-  token: xxx
+    dbname: { user: dbtest, password: dbtest, database: dbtest }
