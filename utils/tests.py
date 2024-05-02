@@ -23,7 +23,7 @@ from pprint import pprint
 # pprint(archery_obj.get_instance(instance_name="islot-v4"))
 # pprint(archery_obj.commit_workflow(
 #     sql_index=0,
-#     sql_file_name="yakir-test",
+#     sql_filename="yakir-test",
 #     sql_release_info="manual",
 #     sql_content="select 1;",
 #     workflow_name="yakir-test",
@@ -67,6 +67,24 @@ from pprint import pprint
 # )
 
 
+# Gitlab
+# from gitlab_api import get_sql_content
+# gitlab_config = GetYamlConfig().get_config('Gitlab')
+# assert gitlab_config, "获取 Gitlab 配置信息失败，检查 config.yaml 配置文件。"
+# gitlab_host = gitlab_config.get("host")
+# gitlab_token = gitlab_config.get("private_token")
+# gitlab_project_id_dict = gitlab_config.get("reponame_map_id")
+# repo_name="isagent_pg-dbtest"
+# sql_content = get_sql_content(
+#     server_address=gitlab_host,
+#     private_token=gitlab_token,
+#     file_name="01.dbtest_dml_yakir.sql",
+#     commit_sha="9f871e44a1b3b332b05c2d6c4d3bc4b420dee74d",
+#     project_id=gitlab_project_id_dict.get(repo_name)
+# )
+# print(sql_content)
+
+
 # Jira
 # from utils.jira_api import JiraAPI
 # jira_obj = JiraAPI()
@@ -80,33 +98,32 @@ from pprint import pprint
 # print(jira_event_webhook_obj.webhook_event)
 
 
-# cicdflow_utils.py
-from cicdflow_utils import *
-# sql_info = "isagent_isagent-merchant@@01.is01_ddl_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c\r\nisagent_isagent-merchant@@02.is01_ddl_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c\r\nisagent_isagent-merchant@@01.is01_dml_yakir.sql@@03fd9df8dc14fd1ce645193423a04c369d57181c"
-# sql_info_list = format_sql_info(sql_info)
-# print(sql_info_list)
-# print(thread_code_handle()
-# )
-
-# nacos_info = "map-test.propertles@@add@@yakir-add@@yakir-value\r\nmap-test.propertles@@update@@need_update@@2.2"
-# nacos_info_dict = format_nacos_info(nacos_info)
-# print(nacos_handle(
-#     nacos_info_dict=nacos_info_dict,
-#     product_id='ISLOT',
-#     environment='UAT'
-# ))
 
 # python manage.py shell
 # from utils.tests import yakir_test
 # yakir_test()
 def yakir_test():
-    from utils.cicdflow_utils import format_code_info, compare_list_info, thread_code_handle
-    last_code_info = None
-    current_code_info = "backend-islot-api-gci@@346f5638a670e06a72c22d7bbcea5a4498da8113@@release_uat_4\r\nbackend-islot-api-report@@a41557a52ee242000baf42ca5a6658eab5b97929@@release_uat_4"
-    last_code_info_list = format_code_info(code_info=last_code_info, environment="UAT")
-    current_code_info_list = format_code_info(code_info=current_code_info, environment="UAT")
-    print(last_code_info_list, current_code_info_list)
-    print(compare_list_info(last_code_info_list, current_code_info_list))
+    from utils.cicdflow_utils import format_sql_info, sql_submit_handle
+    sql_info = "isagent_pg-dbtest@@01.dbtest_ddl_yakir.sql@@9f871e44a1b3b332b05c2d6c4d3bc4b420dee74d\r\nisagent_pg-dbtest@@01.dbtest_dml_yakir.sql@@9f871e44a1b3b332b05c2d6c4d3bc4b420dee74d\r\nisagent_pg-dbtest@@02.dbtest_dml_yakir.sql@@9f871e44a1b3b332b05c2d6c4d3bc4b420dee74d"
+    sql_info_list = format_sql_info(sql_info)
+    print(sql_submit_handle(
+        sql_info_list=sql_info_list,
+        workflow_name="yakir-test-xxxxx",
+        environment="UAT"
+    ))
+
+    # nacos_info = "map-test.propertles@@add@@yakir-add@@yakir-value\r\nmap-test.propertles@@update@@need_update@@2.2"
+    # nacos_info_dict = format_nacos_info(nacos_info)
+    # print(nacos_handle(
+    #     nacos_info_dict=nacos_info_dict,
+    #     product_id='ISLOT',
+    #     environment='UAT'
+    # ))
+
+    # last_code_info = None
+    # current_code_info = "backend-islot-api-gci@@346f5638a670e06a72c22d7bbcea5a4498da8113@@release_uat_4\r\nbackend-islot-api-report@@a41557a52ee242000baf42ca5a6658eab5b97929@@release_uat_4"
+    # last_code_info_list = format_code_info(code_info=last_code_info, environment="UAT")
+    # current_code_info_list = format_code_info(code_info=current_code_info, environment="UAT")
     # pprint(
     #     thread_code_handle(
     #         last_code_info=last_code_info,
@@ -116,7 +133,5 @@ def yakir_test():
     #         issue_key="UP-20"
     #     )
     # )
-# yakir_test()
-
 
 
