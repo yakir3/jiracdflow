@@ -116,7 +116,7 @@ class JiraFlowView(APIView):
                 jira_issue_ser_data = dict(jira_issue_ser.validated_data)
                 # Jira 工单数据存入数据库
                 jira_issue_ser.save()
-                d_logger.info(f"新建 Jira 工单{summary}成功，写入工单数据到数据库中。")
+                d_logger.info(f"新建 Jira 工单 {summary} 成功，写入工单数据到数据库中。")
                 webhook_result = jira_event_webhook_obj.created_event_action(
                     current_issue_data=jira_issue_ser_data,
                 )

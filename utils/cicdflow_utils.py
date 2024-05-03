@@ -451,12 +451,12 @@ def completed_workflow_notice(
 # 多线程方式升级代码
 def thread_code_handle(
         last_code_init_flag: int = None,
+        last_code_info_list: List = None,
+        wait_upgrade_list: List = None,
         current_code_info: str = None,
         product_id: str = None,
         environment: str = None,
-        issue_key: str = None,
-        last_code_info_list: List = None,
-        wait_upgrade_list: List = None
+        issue_key: str = None
     ) -> Dict:
     return_data = {
         "status": False,
@@ -494,7 +494,7 @@ def thread_code_handle(
 
         # 多线程方式循环待升级代码
         # 记录升级成功的服务数量: 1. 全部成功用当前表单 code_info 数据保存数据库 2. 升级失败时只保存升级成功的部分到数据库，用于下次差异升级
-        upgrade_success_number = 0
+        upgrade_success_count = 0
         last_code_info_list = last_code_info_list
         with ThreadPoolExecutor(max_workers=12) as executor:
             futures = []
@@ -505,27 +505,27 @@ def thread_code_handle(
                 futures.append(future)
             # cmdb_obj 对象 project_deploy 方法返回，根据返回状态进行处理
             upgrade_result_list = [future.result() for future in futures]
-            # d_logger.info(upgrade_result_list)
             for upgrade_result in upgrade_result_list:
+                d_logger.info(upgrade_result["msg"])
                 if upgrade_result["status"]:
-                    upgrade_success_number += 1
+                    upgrade_success_count += 1
                     last_code_info_list.append(upgrade_result["data"])
 
         # 根据升级结果返回处理结果
-        if len(wait_upgrade_list) == upgrade_success_number:
+        if len(wait_upgrade_list) == upgrade_success_count:
             jira_issue_obj.issue_status = "UPGRADED DONE"
             jira_issue_obj.code_info = current_code_info
             jira_issue_obj.init_flag["code_init_flag"] = last_code_init_flag + 1
             jira_issue_obj.save()
             return_data["status"] = True
             return_data["msg"] = "代码升级成功"
-            d_logger.info("代码升级成功，更新 code_info 到数据库")
+            d_logger.info("所有代码升级成功，更新 code_info 到数据库")
         else:
             d_logger.info(last_code_info_list)
             jira_issue_obj.code_info = "\r\n".join(last_code_info_list)
             jira_issue_obj.save()
             return_data["msg"] = "代码升级失败，检查日志"
-            d_logger.info("代码升级失败，只更新成功的数据到数据库")
+            d_logger.info("有代码升级失败，只更新成功的数据到数据库")
     except Exception as err:
         return_data["msg"] = f"调用 CMDB 升级代码执行异常，异常原因：{traceback.format_exc()}"
     return return_data

@@ -272,12 +272,12 @@ class JiraEventWebhookAPI(JiraWebhookData):
             d_logger.info(f"工单 {current_summary} 开始升级代码，开始时间：{start_time}")
             code_res = thread_code_handle(
                 last_code_init_flag=last_code_init_flag,
+                last_code_info_list=last_code_info_list,
+                wait_upgrade_list=wait_upgrade_list,
                 current_code_info=current_code_info,
                 product_id=current_product_id,
                 environment=current_environment,
-                issue_key=current_issue_key,
-                wait_upgrade_list=wait_upgrade_list,
-                last_code_info_list=last_code_info_list
+                issue_key=current_issue_key
             )
             end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             d_logger.info(f"工单 {current_summary} 代码升级结束，结束时间：{end_time}")
