@@ -36,7 +36,7 @@ Nacos:
 
 Tool:
   SVN:
-    url: svn://1.1.1.1/
+    host: 1.1.1.1
     username: API
     password: API
   Redis:

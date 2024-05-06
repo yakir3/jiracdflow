@@ -85,6 +85,25 @@ from pprint import pprint
 # print(sql_content)
 
 
+# SVN
+from svn_client import SvnClient
+tools_config = GetYamlConfig().get_config("Tool")
+svn_config = tools_config.get("SVN")
+svn_host = svn_config.get("host")
+svn_username = svn_config.get("username")
+svn_password = svn_config.get("password")
+assert svn_config, "获取 SVN 配置信息失败，检查 config.yaml 配置文件。"
+svn_obj = SvnClient(
+    host=svn_host,
+    username=svn_username,
+    password=svn_password,
+    svn_path="/islot/islot-doris"
+)
+print(svn_obj.get_file_content(
+    revision=7554,
+    filename="01.backend-islot-api-report_ddl_lucian_1.sql"
+))
+
 # Jira
 # from utils.jira_api import JiraAPI
 # jira_obj = JiraAPI()
