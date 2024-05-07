@@ -59,6 +59,8 @@ python manage.py makemigrations
 python manage.py migrate
 #python manage.py collectstatic --noinput
 uwsgi --ini uwsgi.ini
+# uwsgi --reload logs/uwsgi.pid
+# uwsgi --stop logs/uwsgi.pid
 
 
 # Option 2
@@ -74,5 +76,7 @@ poetry run python manage.py makemigrations
 poetry run python manage.py migrate
 #poetry run python manage.py collectstatic --noinput
 poetry run uwsgi --ini uwsgi.ini
+# poetry run uwsgi --reload logs/uwsgi.pid
+# poetry run uwsgi --stop logs/uwsgi.pid
 #tail -f logs/uwsgi.log
 ```
