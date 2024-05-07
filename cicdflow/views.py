@@ -1,3 +1,5 @@
+import time
+
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -13,6 +15,20 @@ from utils.jira_webhook_api import JiraEventWebhookAPI
 import logging
 # c_logger = logging.getLogger("console_logger")
 d_logger = logging.getLogger("default_logger")
+
+
+class TestView(APIView):
+    def get(
+            self,
+            request,
+            *args: Any,
+            **kwargs: Any
+    ) -> Response:
+        try:
+            time.sleep(30)
+            return Response(status=status.HTTP_200_OK)
+        except Exception:
+            return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # Jira 升级自动化流程
