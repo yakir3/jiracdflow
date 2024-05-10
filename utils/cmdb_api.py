@@ -112,7 +112,7 @@ class CmdbAPI:
             if cmdb_req.status_code == 200:
                 # cmdb_req_json = cmdb_req.json()
                 return_data["status"] = True
-                return_data["msg"] = f"工程：{service_name} <升级发布> 成功，版本：{code_version}，分支：{branch}"
+                return_data["msg"] = f"工程：{service_name} <升级发布> 成功，版本：{code_version}，分支：{branch}，环境：{environment}"
             else:
                 return_data["msg"] = f"执行 CMDB <升级发布>接口返回非200状态, 返回数据 {cmdb_req.text}"
             return return_data

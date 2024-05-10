@@ -1,6 +1,6 @@
 from jira import JIRA
 from typing import Union, Dict
-from ast import literal_eval
+# from ast import literal_eval
 from utils.getconfig import GetYamlConfig
 
 __all__ = ["JiraWebhookData", "JiraAPI"]

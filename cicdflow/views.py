@@ -1,3 +1,5 @@
+import time
+
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -13,6 +15,20 @@ from utils.jira_webhook_api import JiraEventWebhookAPI
 import logging
 # c_logger = logging.getLogger("console_logger")
 d_logger = logging.getLogger("default_logger")
+
+
+class TestView(APIView):
+    def get(
+            self,
+            request,
+            *args: Any,
+            **kwargs: Any
+    ) -> Response:
+        try:
+            time.sleep(30)
+            return Response(status=status.HTTP_200_OK)
+        except Exception:
+            return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # Jira 升级自动化流程
@@ -116,7 +132,7 @@ class JiraFlowView(APIView):
                 jira_issue_ser_data = dict(jira_issue_ser.validated_data)
                 # Jira 工单数据存入数据库
                 jira_issue_ser.save()
-                d_logger.info(f"新建 Jira 工单{summary}成功，写入工单数据到数据库中。")
+                d_logger.info(f"新建 Jira 工单 {summary} 成功，写入工单数据到数据库中。")
                 webhook_result = jira_event_webhook_obj.created_event_action(
                     current_issue_data=jira_issue_ser_data,
                 )

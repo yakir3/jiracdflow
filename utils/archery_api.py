@@ -177,7 +177,7 @@ class ArcheryAPI(object):
     def commit_workflow(
             self,
             sql_index: int = 0,
-            sql_file_name: str = None,
+            sql_filename: str = None,
             sql_release_info: str = None,
             sql_content: str = None,
             workflow_name: str = None,
@@ -191,7 +191,7 @@ class ArcheryAPI(object):
         """
         Args:
             sql_index: SQL 执行序号
-            sql_file_name: SQL 文件名
+            sql_filename: SQL 文件名
             sql_release_info: SQL 版本信息
             sql_content: SQL 文件内容
             workflow_name: 工单名称
@@ -266,7 +266,7 @@ class ArcheryAPI(object):
                     "sql_release_info": sql_release_info,
                     "workflow_name": workflow_name,
                     "w_status": w_status,
-                    "sql_file_name": sql_file_name
+                    "sql_filename": sql_filename
                 }
             else:
                 return_data["msg"] = f"工单 {workflow_name} 提交失败，检查 Archery 日志"

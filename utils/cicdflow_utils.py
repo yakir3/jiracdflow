@@ -9,7 +9,7 @@ import traceback
 from utils.archery_api import ArcheryAPI
 from utils.cmdb_api import CmdbAPI
 from utils.getconfig import GetYamlConfig
-from utils.gitlab_api import get_sql_content as get_sql_content_from_gitlab
+from utils.gitlab_api import get_sql_content
 from utils.nacos_client import NacosClient
 # from utils.pgsql_api import PostgresClient
 from utils.email_client import EmailClient
@@ -70,6 +70,7 @@ def sql_submit_handle(
         assert gitlab_config, "获取 Gitlab 配置信息失败，检查 config.yaml 配置文件。"
         gitlab_host = gitlab_config.get("host")
         gitlab_token = gitlab_config.get("private_token")
+        gitlab_project_id_dict = gitlab_config.get("reponame_map_id")
 
         # 根据 environment 获取对应 Archery 配置; 过滤掉只在对应环境执行的 SQL
         if environment == "PROD":
@@ -90,7 +91,7 @@ def sql_submit_handle(
         # 创建 SqlWorkflow, SqlWorkflowSerializer 对象
         from cicdflow.models import SqlWorkflow
         from cicdflow.serializers import SqlWorkflowSerializer
-        sqlworkflow_obj = SqlWorkflow()
+        sqlworkflow_obj = SqlWorkflow
 
         # 开始提交处理逻辑
         submit_success_count = 0
@@ -102,30 +103,31 @@ def sql_submit_handle(
             commit_sha = sql_data.get("commit_sha")
             resource_name = repo_name.split("_")[0]
             instance_name = repo_name.split("_")[1]
-            sql_content = get_sql_content_from_gitlab(
+            sql_content = get_sql_content(
                 server_address=gitlab_host,
                 private_token=gitlab_token,
-                repo_name=repo_name,
                 file_name=file_name,
-                commit_sha=commit_sha
+                commit_sha=commit_sha,
+                project_id=gitlab_project_id_dict.get(repo_name)
             )
 
             # 查询 SqlWorkflow 表是否已存在 SQL 文件，不存在则提交，存在则跳过
             queryset = sqlworkflow_obj.objects.filter(
                 workflow_name=workflow_name,
-                sql_file_name=file_name,
+                sql_filename=file_name,
                 sql_release_info=commit_sha
             ).filter(
                 Q(w_status="workflow_manreviewing") | Q(w_status="workflow_review_pass") | Q(w_status="workflow_finish")
             ).exists()
             if queryset:
+                d_logger.info(f"工单：{workflow_name} SQL：{file_name} ，提交版本：{commit_sha} 已存在数据库中，不提交")
                 submit_success_count += 1
                 continue
 
             # 获取提交 Archery SQL 工单数据
             commit_data = {
                 "sql_index": sql_index,
-                "sql_file_name": file_name,
+                "sql_filename": file_name,
                 'sql_release_info': commit_sha,
                 "sql_content": sql_content,
                 "workflow_name": workflow_name,
@@ -195,7 +197,7 @@ def sql_upgrade_handle(
         # 创建 SqlWorkflow, SqlWorkflowSerializer 对象
         from cicdflow.models import SqlWorkflow
         # from cicdflow.serializers import SqlWorkflowSerializer
-        sqlworkflow_obj = SqlWorkflow()
+        sqlworkflow_obj = SqlWorkflow
         # sqlworkflow_ser_obj = SqlWorkflowSerializer()
 
         # TODO: 获取 SqlWorkflow 表中所有待审核状态的备份工单，判断是否存在需要备份工单，先执行备份工单再执行后续 SQL.
@@ -209,7 +211,7 @@ def sql_upgrade_handle(
             # 从数据库工单实例中获取工单 ID
             sqlworkflow_ins = sqlworkflow_obj.objects.get(
                 sql_index=sql_index,
-                sql_file_name=file_name,
+                sql_filename=file_name,
                 sql_release_info=commit_sha,
                 workflow_name=workflow_name
             )
@@ -237,9 +239,12 @@ def sql_upgrade_handle(
                 sleep(15)
                 assert execute_result["status"], f"工单 {workflow_name} SQL 自动执行失败，返回结果：{execute_result}"
                 d_logger.info(f"工单 {workflow_name} SQL 自动执行成功，SQL 文件：{file_name}，版本：{commit_sha}")
+            # workflow_finish：跳过执行动作
+            elif w_status == "workflow_finish":
+                d_logger.info(f"工单 {workflow_name} SQL 文件：{file_name}，版本：{commit_sha} 状态为 workflow_finish，跳过执行动作")
             # workflow_queuing / workflow_exception：中止流程
             else:
-                raise Exception(f"工单 {workflow_name} SQL 状态为异常状态 {select_workflow_status}，SQL 文件：{file_name}，版本：{commit_sha}. 中止执行")
+                raise Exception(f"工单 {workflow_name} SQL 状态为异常状态 {w_status}，SQL 文件：{file_name}，版本：{commit_sha}. 中止执行")
 
             # 保存工单状态到 SqlWorkflow 表中
             sqlworkflow_ins.w_status = "workflow_finish"
@@ -253,7 +258,7 @@ def sql_upgrade_handle(
             commit_sha = sql_data.get("commit_sha")
             queryset = sqlworkflow_obj.objects.filter(
                 sql_index=sql_index,
-                sql_file_name=file_name,
+                sql_filename=file_name,
                 sql_release_info=commit_sha,
                 workflow_name=workflow_name
             ).filter(w_status="workflow_finish").exists()
@@ -306,6 +311,7 @@ def sql_upgrade_handle(
 #         return None
 
 # 格式化 nacos 数据
+
 def format_nacos_info(
         nacos_info: str = None
 ) -> Dict:
@@ -446,12 +452,12 @@ def completed_workflow_notice(
 # 多线程方式升级代码
 def thread_code_handle(
         last_code_init_flag: int = None,
+        last_code_info_list: List = None,
+        wait_upgrade_list: List = None,
         current_code_info: str = None,
         product_id: str = None,
         environment: str = None,
-        issue_key: str = None,
-        last_code_info_list: List = None,
-        wait_upgrade_list: List = None
+        issue_key: str = None
     ) -> Dict:
     return_data = {
         "status": False,
@@ -489,7 +495,7 @@ def thread_code_handle(
 
         # 多线程方式循环待升级代码
         # 记录升级成功的服务数量: 1. 全部成功用当前表单 code_info 数据保存数据库 2. 升级失败时只保存升级成功的部分到数据库，用于下次差异升级
-        upgrade_success_number = 0
+        upgrade_success_count = 0
         last_code_info_list = last_code_info_list
         with ThreadPoolExecutor(max_workers=12) as executor:
             futures = []
@@ -500,27 +506,27 @@ def thread_code_handle(
                 futures.append(future)
             # cmdb_obj 对象 project_deploy 方法返回，根据返回状态进行处理
             upgrade_result_list = [future.result() for future in futures]
-            # d_logger.info(upgrade_result_list)
             for upgrade_result in upgrade_result_list:
+                d_logger.info(upgrade_result["msg"])
                 if upgrade_result["status"]:
-                    upgrade_success_number += 1
+                    upgrade_success_count += 1
                     last_code_info_list.append(upgrade_result["data"])
 
         # 根据升级结果返回处理结果
-        if len(wait_upgrade_list) == upgrade_success_number:
+        if len(wait_upgrade_list) == upgrade_success_count:
             jira_issue_obj.issue_status = "UPGRADED DONE"
             jira_issue_obj.code_info = current_code_info
             jira_issue_obj.init_flag["code_init_flag"] = last_code_init_flag + 1
             jira_issue_obj.save()
             return_data["status"] = True
             return_data["msg"] = "代码升级成功"
-            d_logger.info("代码升级成功，更新 code_info 到数据库")
+            d_logger.info("所有代码升级成功，更新 code_info 到数据库")
         else:
             d_logger.info(last_code_info_list)
             jira_issue_obj.code_info = "\r\n".join(last_code_info_list)
             jira_issue_obj.save()
             return_data["msg"] = "代码升级失败，检查日志"
-            d_logger.info("代码升级失败，只更新成功的数据到数据库")
+            d_logger.info("有代码升级失败，只更新成功的数据到数据库")
     except Exception as err:
         return_data["msg"] = f"调用 CMDB 升级代码执行异常，异常原因：{traceback.format_exc()}"
     return return_data
